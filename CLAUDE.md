@@ -4,16 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status: both protocol families confirmed printing on real hardware
 
-`cz.bliksoft.ptlabelprint.protocol.niimbot` has a real (partial) port of niimbluelib's protocol:
-packet framing/checksum (`NiimbotPacket`), the full `RequestCommandId`/`ResponseCommandId` catalog,
-`NiimbotDevice` (connect handshake, printer info, heartbeat, RFID info, printer reset, plus the
-page/bitmap-row/print-start-end primitives), `NiimbotImageEncoder` (ported from niimbluelib's
-`ImageEncoder` - row encoding, run-length row collapsing, indexed/full bitmap row selection), and
-`D110V4PrintTask` (ported from niimbluelib's `D110MV4PrintTask` - the print task niimbluelib's own
-model-dispatch table assigns to the D11_H, among others) and `B1PrintTask` (ported from
-niimbluelib's `B1PrintTask` - the print task the same dispatch table assigns to the M2_H, among
-others; **not** `D110MV4PrintTask` despite the similar "D110M" naming - `Cli`'s
-`niimbot-print-test` picks between the two by model) - all built on the shared `BleTransport`.
+`cz.bliksoft.ptlabelprint.protocol.niimbot` has a full port of niimbluelib's printer/print-task
+catalog and a real (partial) port of its protocol: packet framing/checksum (`NiimbotPacket`), the
+full `RequestCommandId`/`ResponseCommandId` catalog, `NiimbotDevice` (connect handshake, printer
+info, heartbeat, RFID info, printer reset, plus the page/bitmap-row/print-start-end primitives),
+`NiimbotImageEncoder` (ported from niimbluelib's `ImageEncoder` - row encoding, run-length row
+collapsing, indexed/full bitmap row selection), `PrinterModel`/`PrinterModels` (all **77** models
+niimbluelib itself ships metadata for - id(s), dpi, print direction, printhead pixels, paper types,
+density range - a full verbatim port, not just the D-series/M2_H subset from earlier), and all
+**7** of niimbluelib's print tasks, each `extends AbstractNiimbotPrintTask` (the shared plumbing -
+`validatePage`, and concrete-but-overridable defaults for `waitForFinished`/`printEnd`/
+`isSupportColor` - ported from niimbluelib's own `AbstractPrintTask`): `D110V4PrintTask` (D11_H,
+also D110_M protocol v4/B21_PRO/B1_PRO/C1/EP1C), `B1PrintTask` (M2_H, also B1/D110_M below protocol
+v4/B21_C2B/N1/D101 - **not** `D110V4PrintTask` despite the similar "D110M" naming),
+`OldD11PrintTask` (D11/D11S), `D110PrintTask` (B21S/B21S_C2B/D110, also D11 at protocol v1/v2),
+`B21V1PrintTask` (B21), `B21L2BPrintTask` (B21_L2B), and `H1SPrintTask` (H1S). `NiimbotPrintTasks`
+is the model→task dispatch table (mirrors niimbluelib's own `modelPrintTasks`/`findPrintTask` -
+an exact `{model, protocolVersion}` match beats a bare-model match); most of the 77 models aren't
+in it at all, matching niimbluelib itself, which has no dedicated print task for them either - this
+project doesn't invent one. `Cli`'s `niimbot-print-test` dispatches through
+`NiimbotPrintTasks.findPrintTask` rather than a hardcoded per-model branch. All of this is built on
+the shared `BleTransport`.
 **Confirmed against a real Niimbot D11_H**:
 - `ptlabelprint-cli info <address>`: connect handshake (protocol v5), model ID (528, correctly
   resolved to `D11_H` via `PrinterModels`), serial number (matched the device's own advertised
@@ -65,40 +76,61 @@ others; **not** `D110MV4PrintTask` despite the similar "D110M" naming - `Cli`'s
 `PrinterCatalog`'s `M2_H` entry is now marked `isConfirmedOnHardware() == true` to match.
 
 `Cli` wires the family up with `scan`/`info`/`media`/`gatt`/`raw`/`niimbot-print-test` subcommands.
-**Not implemented yet**: Serial transport, firmware upgrade, other print tasks (`OldD11PrintTask`/
-`D110PrintTask`/etc. - `D110V4PrintTask` and `B1PrintTask` are the only two ported, since they're
-the only ones tested), and a real image pipeline (`niimbot-print-test` hand-builds a `PixelSource`,
-no dithering/scaling from an arbitrary source image). See each class's javadoc for exactly which
-niimbluelib methods it ports vs. omits.
+**Not implemented yet**: Serial transport, firmware upgrade, and a real image pipeline
+(`niimbot-print-test` hand-builds a `PixelSource`, no dithering/scaling from an arbitrary source
+image). See each print-task class's javadoc for exactly which niimbluelib methods it ports vs.
+omits - only `D110V4PrintTask` (D11_H) and `B1PrintTask` (M2_H) are hardware-confirmed; the other 5
+are ported from niimbluelib's source but untested against real hardware.
 
 `cz.bliksoft.ptlabelprint.protocol.phomemo` (`RasterImage`, `DSeriesCommands`, `DSeriesPrinter`)
 ports phomymo's `d-series` protocol and **has successfully printed on a real Phomemo Q30** via
 `ptlabelprint-cli phomemo-print-test <address>` - a 12mm x 12mm solid square, correctly sized,
 positioned, and shaped. Getting there took three real-hardware iterations; see "Debugging history"
-below for what each one actually was (useful precedent for the next device/model). Not implemented
-yet for `phomemo`: the other sub-protocols (`m02`/`m04`/`m110`/generic `m-series`/`p12`/`tspl`) and
-a real image pipeline (dithering/scaling into a `RasterImage` from an arbitrary source image) - the
-test command hand-builds a trivial raster.
+below for what each one actually was (useful precedent for the next device/model). The other 6
+protocol tags (`m02`/`m04`/`m110`/generic `m-series`/`p12`/`tspl`) are now **cataloged, not yet
+implemented**: `PhomemoPrinterModel`/`PhomemoPrinterModelMeta`/`PhomemoPrinterModels` hold all 17 of
+phomymo's non-d-series `printers.json` rows verbatim (protocol tag, width, dpi, alignment,
+rotation, tape), and `PrinterFamily`/`PrinterCatalog` know about them (see below) - but no
+command-builder/print-flow code exists for any of the 6 yet, so a detected device from one of them
+can't actually print (`PrinterFactory` throws `UnimplementedPrinterFamilyException`, not silently
+misdispatching or defaulting). Still missing everywhere in `phomemo`, `d-series` included: a real
+image pipeline (dithering/scaling into a `RasterImage` from an arbitrary source image) - the test
+command hand-builds a trivial raster.
 
 `cz.bliksoft.ptlabelprint.printer` - the printer abstraction layer - is now implemented, once there
 were two real protocol families to actually generalize across: `PrinterCatalog` (BLE-advertised-
 name → `PrinterDefinition`, longest-prefix-wins, mirroring phomymo's own `detectPrinterConfig`) and
-`LabelPrinter` (a *connection-lifecycle-only* common interface - `NiimbotLabelPrinter`/
-`PhomemoDSeriesLabelPrinter` expose each family's real, different print API after connecting; see
-`LabelPrinter`'s own javadoc for why printing itself isn't unified - Phomemo's `d-series` has no
-info-query capability at all, unlike Niimbot's rich `PrinterInfoType` catalog, and forcing one
-print signature across genuinely different image models would lose real capability). **Confirmed
-against real hardware**: `ptlabelprint-cli discover` (an unfiltered scan cross-referenced against
+`LabelPrinter` (a *connection-lifecycle-only* common interface - see `LabelPrinter`'s own javadoc
+for why printing itself isn't unified - Phomemo's `d-series` has no info-query capability at all,
+unlike Niimbot's rich `PrinterInfoType` catalog, and forcing one print signature across genuinely
+different image models would lose real capability). Beneath that interface, a real (not
+speculative) class hierarchy: `AbstractLabelPrinter` (cross-family - just the `PrinterDefinition`
+field/family-validation pattern, since `connect`/`close`/`isConnected` delegate to genuinely
+different underlying objects per family and aren't shareable further at that level) and
+`PhomemoLabelPrinter` (Phomemo-specific - the `BlePeripheral`→`BleTransport` construction step plus
+concrete `connect`/`close`/`isConnected` bodies, since every Phomemo sub-protocol, implemented or
+merely cataloged, shares the same transport shape). `NiimbotLabelPrinter` extends
+`AbstractLabelPrinter` directly (exposes each family's real, different print API after connecting -
+`getDevice()`/`getPrinterInfo()`); `PhomemoDSeriesLabelPrinter` extends `PhomemoLabelPrinter`
+(exposes `print(...)`) - the only concrete `PhomemoLabelPrinter` subclass today, but the class is
+real, shipping duplication-removal between two real files, not scaffolding for the 6 unimplemented
+Phomemo families (those get no `LabelPrinter` subclass at all - see below). **Confirmed against
+real hardware**: `ptlabelprint-cli discover` (an unfiltered scan cross-referenced against
 `PrinterCatalog` - the fix for `scan`'s Niimbot-service-UUID filter finding neither real device
 family, noted below) correctly identified a real D11_H's advertised name
-(`D11_H-G412010570` → `D11_H(NIIMBOT)`) live over the air; `ptlabelprint-cli connect <address>` then
-auto-detected, dispatched via `PrinterFactory`, and connected through `NiimbotLabelPrinter`,
-producing the same `PrinterInfo` as the family-specific `info` command. The catalog only has
-entries for the models each family's protocol code already supports (the niimbluelib-ported
-`PrinterModels` entries for `NIIMBOT`; `D30`/`D35`/`D50`/`Q30`/`Q30S` for `PHOMEMO_D_SERIES`,
-deliberately excluding phomymo's own bare `"D"` wildcard pattern since it would collide with every
-Niimbot D-series name) - see `PrinterDefinition#isConfirmedOnHardware()` for which of those are
-actually hardware-tested (only D11_H and Q30 so far) vs. just ported-and-untested.
+(`D11_H-G412010570` → `D11_H(NIIMBOT)`) and a real M2_H's (`M2_H-I814050044` → `M2_H(NIIMBOT)`) live
+over the air; `ptlabelprint-cli connect <address>` then auto-detected, dispatched via
+`PrinterFactory`, and connected through `NiimbotLabelPrinter`, producing the same `PrinterInfo` as
+the family-specific `info` command. The catalog now has an entry for every model
+`PrinterModels`/`PhomemoPrinterModels` covers with a real BLE name pattern to match on (all 77
+Niimbot models; 14 of Phomemo's 17 cataloged non-d-series rows - 3 are manual-select-only, no name
+to match, see `PhomemoPrinterModels`' javadoc; plus `D30`/`D35`/`D50`/`Q30`/`Q30S` for
+`PHOMEMO_D_SERIES`, deliberately excluding phomymo's own bare `"D"` wildcard pattern since it would
+collide with every Niimbot D-series name) - see `PrinterDefinition#isConfirmedOnHardware()` for
+which of those are actually hardware-tested (only D11_H, M2_H, and Q30 so far) vs. just
+ported-and-untested, and `PrinterFamily`'s own javadoc for the 6 Phomemo sub-protocol families that
+are cataloged but have no `LabelPrinter` implementation at all (`PrinterFactory` throws
+`UnimplementedPrinterFamilyException` for those, distinct from "not recognized").
 
 **Neither family's real device advertises the service UUID `BleTransport.scanFilter()`/the CLI's
 `scan` command filters on** - confirmed for both the Phomemo Q30 and a genuine Niimbot D11_H (found
@@ -237,9 +269,11 @@ Two protocol families are in scope right now:
   `cz.bliksoft.ptlabelprint.protocol.niimbot`, unverified against real hardware yet (see "Status").
   **Not** confirmed to cover any Phomemo model - see the corrected finding above.
 - **phomemo** — Phomemo's own printer families (`d-series` covers the Q30 in hand, plus
-  D30/D35/D50/D110; also `m02`/`m04`/`m110`/generic `m-series`/`p12`), ported from
-  [phomymo](https://github.com/transcriptionstream/phomymo) (MIT). Not implemented yet - see
-  "Protocol families" below for the concrete bytes to port.
+  D30/D35/D50/D110; also `m02`/`m04`/`m110`/generic `m-series`/`p12`/`tspl`), ported from
+  [phomymo](https://github.com/transcriptionstream/phomymo) (MIT). `d-series` implemented and
+  hardware-confirmed; the other 6 tags are now cataloged (all 17 of phomymo's non-d-series
+  `printers.json` rows, in `protocol.phomemo.PhomemoPrinterModels`) but not implemented - see
+  "Protocol families" below for the concrete bytes to port if/when one of them gets built.
 
 **Zebra (ZPL) and Brother P-touch support are planned** as additional protocol families (see
 "Protocol families" below) — not implemented yet, but the package layout and printer abstraction
@@ -281,11 +315,19 @@ printer-abstraction-layer design:
     5. end: `1B 64 00` (ESC d 0 - triggers gap-detection cut/feed; continuous tape instead bakes
        feed into padding rows before sending, see `DSeriesPrinter`'s `CUTTER_OFFSET_ROWS`/`feedDots` handling)
   - `m02`, `m04`, `m110`, generic `m-series`, `p12` — other Phomemo model families, each with their
-    own command set in `printer.js` (`M02_CMD`/`M04_CMD`/`M110_CMD`/`CMD`/`P12_CMD`); not implemented,
-    port on demand when a model in one of these families needs support.
+    own command set in `printer.js` (`M02_CMD`/`M04_CMD`/`M110_CMD`/`CMD`/`P12_CMD`). **Cataloged**
+    (`PhomemoPrinterModel`/`PhomemoPrinterModelMeta`/`PhomemoPrinterModels` - all 12 models across
+    these 5 tags, ported verbatim from `printers.json`: width, dpi, alignment, rotation, tape) but
+    **not implemented** (no command-builder/print-flow code) - port on demand when a model in one of
+    these families needs real print support. `PrinterFamily` has a constant per tag
+    (`PHOMEMO_M02`/`PHOMEMO_M04`/`PHOMEMO_M110`/`PHOMEMO_M_SERIES`/`PHOMEMO_P12`) so
+    `PrinterCatalog`/`PrinterFactory` correctly *identify* a device from one of them instead of
+    misdispatching it as `d-series` - `PrinterFactory` throws `UnimplementedPrinterFamilyException`
+    for these, not a generic "unknown printer" error.
   - `tspl` — PM-241, a **text-based** protocol (`SIZE`/`GAP`/`DENSITY`/`BITMAP`/`PRINT`/`END` as
     CRLF-terminated ASCII commands, per phomymo's `TSPL` object) - generic enough to also cover
-    non-Phomemo TSPL printers. Not implemented.
+    non-Phomemo TSPL printers. **Cataloged** (`PhomemoPrinterModel.PM241` in `PhomemoPrinterModels`,
+    `PrinterFamily.PHOMEMO_TSPL`) but not implemented, same as the tags above.
   A dispatcher keyed on `printers.json`'s `protocol` field (mirroring `printer.js`'s per-family
   command objects) isn't built yet - `d-series` is used directly since it's the only sub-protocol
   implemented so far; add that dispatch once a second sub-protocol lands.
@@ -320,11 +362,12 @@ The printer abstraction layer (`cz.bliksoft.ptlabelprint.printer`) is what dispa
 these — declarative per-model definitions (currently just which protocol family a model speaks;
 label width/DPI/rotation stay in each family's own device configmaps, e.g. `PrinterModels` for
 niimbot) plus auto-detection from the BLE advertised name, mirroring phomymo's `printers.json` +
-auto-detect approach. **Implemented and confirmed on real hardware** (D11_H) once there were two
-real families to actually generalize across - see "Status" above for what's confirmed and
-"Architecture" below for the package layout. Only has catalog entries for `niimbot`/
-`phomemo_d_series` so far; extend `PrinterCatalog` when `zebra`/`brother`/other `phomemo`
-sub-protocols get implemented.
+auto-detect approach. **Implemented and confirmed on real hardware** (D11_H, M2_H) once there were
+two real families to actually generalize across - see "Status" above for what's confirmed and
+"Architecture" below for the package layout. Has catalog entries for `niimbot` (all 77 models),
+`phomemo_d_series`, and the 6 cataloged-but-unimplemented Phomemo sub-protocols (14 of their 17
+models have a BLE name to match on - see "Status"); extend `PrinterCatalog` further when
+`zebra`/`brother` get implemented.
 
 ## Licensing constraint on protocol research
 
@@ -382,25 +425,42 @@ manufacturer/protocol-family split described above:
   too - don't move framing/commands here, only what's truly shared.
   - `.protocol.niimbot` - the Niimbot family: framing/commands (`NiimbotPacket`,
     `RequestCommandId`/`ResponseCommandId`, `PacketGenerator`/`PacketParser`), device configmaps
-    (`PrinterModel`/`PrinterModelMeta`/`PrinterModels`), image encoding (`NiimbotImageEncoder`),
-    the print flow (`D110V4PrintTask`), and the high-level API (`NiimbotDevice`). Confirmed
-    against a real D11_H, both info and printing (see "Status").
+    (`PrinterModel`/`PrinterModelMeta`/`PrinterModels` - full 77-model port), image encoding
+    (`NiimbotImageEncoder`), the 7 print flows (`AbstractNiimbotPrintTask` and its subclasses -
+    `D110V4PrintTask`/`B1PrintTask`/`OldD11PrintTask`/`D110PrintTask`/`B21V1PrintTask`/
+    `B21L2BPrintTask`/`H1SPrintTask`; `NiimbotPrintTasks` is the model→task dispatch table), and the
+    high-level API (`NiimbotDevice`). Confirmed against a real D11_H and M2_H, both info and
+    printing (see "Status") - the other 5 print tasks/67 models are ported but untested.
   - `.protocol.phomemo` - Phomemo's families: `RasterImage` (1bpp raster + rotation),
-    `DSeriesCommands` (byte builders), `DSeriesPrinter` (the `d-series` print flow). Confirmed
-    working against a real Q30 (see "Status"/"Debugging history"). Other Phomemo sub-protocols
-    (`m02`/`m04`/`m110`/generic `m-series`/`p12`/`tspl`) aren't ported yet - add sibling
-    classes/sub-packages here when one is needed, dispatched (once there's a second sub-protocol to
-    dispatch between) the way `printers.json`'s `protocol` field does upstream.
+    `DSeriesCommands` (byte builders), `DSeriesPrinter` (the `d-series` print flow) - confirmed
+    working against a real Q30 (see "Status"/"Debugging history"). `PhomemoPrinterModel`/
+    `PhomemoPrinterModelMeta`/`PhomemoPrinterModels` catalog the other 6 sub-protocols
+    (`m02`/`m04`/`m110`/generic `m-series`/`p12`/`tspl`) - data only, no command-builder/print-flow
+    code for any of them yet; add sibling classes/sub-packages here when one is actually ported,
+    dispatched (once there's a second real sub-protocol to dispatch between) the way
+    `printers.json`'s `protocol` field does upstream.
   `.printer` is the cross-family abstraction layer, now implemented (see "Status" above):
-  `PrinterFamily`/`PrinterDefinition`/`PrinterCatalog` (name-based family detection),
-  `LabelPrinter`/`NiimbotLabelPrinter`/`PhomemoDSeriesLabelPrinter`/`PrinterFactory` (unified
-  connect lifecycle + per-family dispatch - see `LabelPrinter`'s own javadoc for why printing
-  itself stays family-specific). `.image` (image staging/encoding, optional IconSpecEngine bridge)
-  is still just a package-info - not worth building without a real image pipeline yet.
+  `PrinterFamily`/`PrinterDefinition`/`PrinterCatalog` (name-based family detection, including the
+  6 cataloged-but-unimplemented Phomemo families), `LabelPrinter`/`AbstractLabelPrinter`/
+  `NiimbotLabelPrinter`/`PhomemoLabelPrinter`/`PhomemoDSeriesLabelPrinter`/`PrinterFactory`/
+  `UnimplementedPrinterFamilyException` (unified connect lifecycle + per-family dispatch, with a
+  real (not speculative) shared-implementation hierarchy beneath `LabelPrinter` - see `LabelPrinter`'s
+  own javadoc for why printing itself stays family-specific, and `PhomemoLabelPrinter`'s for why it
+  exists despite having one concrete subclass today). `.image` (image staging/encoding, optional
+  IconSpecEngine bridge) is still just a package-info - not worth building without a real image
+  pipeline yet.
   `cz.bliksoft.ptlabelprint.Cli` (top level) and `.printer` are the only other packages with real
   code. Don't create `.protocol.zebra`/`.protocol.brother` package stubs before there's real work
   to put in them - the "Protocol families" section above documents intent, not required
-  scaffolding.
+  scaffolding. **Narrow exception**: the 6 `PrinterFamily.PHOMEMO_*` constants beyond
+  `PHOMEMO_D_SERIES` (and their `PrinterCatalog`/`PhomemoPrinterModels` data) are *not* a violation
+  of this rule despite having no print-flow implementation - no new `.protocol.phomemo.m02`-style
+  *package* was created for any of them, only enum/catalog data, added specifically so
+  `PrinterCatalog`/`PrinterFactory` correctly identify one of these devices (`PrinterFactory` throws
+  a distinct `UnimplementedPrinterFamilyException`) instead of misdispatching it as `d-series` -
+  exactly the class of bug this file's own "Corrected finding" section is about. This is scoped
+  narrowly to Phomemo's already-fully-documented sub-protocols above; it is not a general license to
+  add family constants speculatively (zebra/brother still get none).
 - **CLI**: `scan`/`info`/`gatt`/`raw` (Niimbot-focused, plus protocol-agnostic BLE diagnostics),
   `niimbot-print-test`/`phomemo-print-test` (exercise each family's print flow end to end - see
   "Build / test commands" above), and `discover`/`connect` (go through the `.printer` abstraction

@@ -10,6 +10,7 @@ import cz.bliksoft.javautils.ble.BleService;
 import cz.bliksoft.javautils.ble.ScanFilter;
 import cz.bliksoft.javautils.ble.utils.BleUtils;
 import cz.bliksoft.ptlabelprint.protocol.BleTransport;
+import cz.bliksoft.ptlabelprint.protocol.niimbot.AbstractNiimbotPrintTask;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.B1PrintTask;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.D110V4PrintTask;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.EncodedImage;
@@ -17,6 +18,7 @@ import cz.bliksoft.ptlabelprint.protocol.niimbot.HeartbeatData;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.LabelType;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.NiimbotDevice;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.NiimbotImageEncoder;
+import cz.bliksoft.ptlabelprint.protocol.niimbot.NiimbotPrintTasks;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PageColorType;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PixelSource;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PrintOptions;
@@ -31,6 +33,7 @@ import cz.bliksoft.ptlabelprint.printer.NiimbotLabelPrinter;
 import cz.bliksoft.ptlabelprint.printer.PrinterCatalog;
 import cz.bliksoft.ptlabelprint.printer.PrinterDefinition;
 import cz.bliksoft.ptlabelprint.printer.PrinterFactory;
+import cz.bliksoft.ptlabelprint.printer.UnimplementedPrinterFamilyException;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -447,17 +450,19 @@ public class Cli implements Runnable {
 	}
 
 	/**
-	 * Prints a small validation test pattern, dispatching to whichever print task niimbluelib's own
-	 * model dispatch table assigns: {@link D110V4PrintTask} for the D11_H (also D110_M protocol v4,
-	 * B21_PRO, B1_PRO, C1, EP1C - untested here), {@link B1PrintTask} for the M2_H (also B1, D110_M
-	 * protocol &lt; 4, B21_C2B, N1, D101 - untested here). Uses real consumables. Unlike Phomemo's
+	 * Prints a small validation test pattern, dispatching to whichever print task
+	 * {@link NiimbotPrintTasks} assigns to the connected model/protocol-version. Uses real
+	 * consumables. Only D11_H ({@link D110V4PrintTask}) and M2_H ({@link B1PrintTask}) are actually
+	 * confirmed against real hardware - every other model {@link NiimbotPrintTasks} maps is ported
+	 * from niimbluelib but untested here, and any model it doesn't map at all has no print task
+	 * ported yet (surfaced as a clear error below, not a silent guess). Unlike Phomemo's
 	 * {@code d-series}, the Niimbot protocol doesn't require the image width to exactly match the
 	 * printhead's physical capacity (the printer accepts whatever {@code cols} the caller
 	 * declares) - this test still uses the connected printer's own confirmed printhead width for a
 	 * full-width, unambiguous test print.
 	 */
 	@Command(name = "niimbot-print-test",
-			description = "Print a small test pattern to a Niimbot-branded printer (D11_H/M2_H tested; likely also D110_M/B21_PRO/B1_PRO/C1/EP1C/B1/B21_C2B/N1/D101). Uses real consumables.")
+			description = "Print a small test pattern to a Niimbot-branded printer (D11_H/M2_H hardware-confirmed; every other model NiimbotPrintTasks maps is ported but untested). Uses real consumables.")
 	static class NiimbotPrintTestCommand implements Callable<Integer> {
 
 		@Parameters(index = "0", description = "BLE address of the printer (see 'scan').")
@@ -503,24 +508,15 @@ public class Cli implements Runnable {
 							.setDensity(density)
 							.setTotalPages(1);
 
-					// M2_H uses niimbluelib's "B1" print task, not "D110M_V4" (despite the D11_H/D110_M-v4
-					// naming similarity) - see B1PrintTask's own javadoc for the model-dispatch table.
-					boolean useB1Task = device.getModelMetadata().map(PrinterModelMeta::getModel)
-							.map(m -> m == PrinterModel.M2_H).orElse(false);
+					PrinterModel model = device.getModelMetadata().map(PrinterModelMeta::getModel).orElse(null);
+					AbstractNiimbotPrintTask task = NiimbotPrintTasks.findPrintTask(model, info.getProtocolVersion())
+							.map(factory -> factory.create(device, options))
+							.orElseThrow(() -> new IllegalStateException("No print task implemented for model " + model + " yet"));
 
-					if (useB1Task) {
-						B1PrintTask task = new B1PrintTask(device, options);
-						task.printInit();
-						task.printPage(image, 1);
-						task.waitForFinished();
-						task.printEnd();
-					} else {
-						D110V4PrintTask task = new D110V4PrintTask(device, options);
-						task.printInit();
-						task.printPage(image, 1);
-						task.waitForFinished();
-						task.printEnd();
-					}
+					task.printInit();
+					task.printPage(image, 1);
+					task.waitForFinished();
+					task.printEnd();
 
 					System.out.println("Done.");
 				} finally {
@@ -636,12 +632,21 @@ public class Cli implements Runnable {
 				PrinterDefinition definition = matches.get(0);
 				System.out.println("Detected: " + definition);
 
-				try (LabelPrinter printer = PrinterFactory.create(definition, result.getPeripheral(adapter))) {
-					printer.connect();
+				LabelPrinter printer;
+				try {
+					printer = PrinterFactory.create(definition, result.getPeripheral(adapter));
+				} catch (UnimplementedPrinterFamilyException e) {
+					System.err.println("Detected as " + definition + ", but that family isn't implemented yet"
+							+ " (cataloged, not printable) - see CLAUDE.md's \"Protocol families\" section.");
+					return 1;
+				}
+
+				try (LabelPrinter p = printer) {
+					p.connect();
 					System.out.println("Connected.");
 
-					if (printer instanceof NiimbotLabelPrinter) {
-						System.out.println(((NiimbotLabelPrinter) printer).getPrinterInfo());
+					if (p instanceof NiimbotLabelPrinter) {
+						System.out.println(((NiimbotLabelPrinter) p).getPrinterInfo());
 					} else {
 						System.out.println("(no info-query capability for this protocol family)");
 					}

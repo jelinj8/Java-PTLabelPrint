@@ -34,4 +34,20 @@ class PrinterModelsTest {
 		Optional<PrinterModelMeta> meta = PrinterModels.findById(999999);
 		assertFalse(meta.isPresent());
 	}
+
+	@Test
+	void tableHasAllSeventySevenPortedModels() {
+		assertEquals(77, PrinterModels.all().size());
+	}
+
+	@Test
+	void knownIdCollisionsResolveToTheFirstTableEntry() {
+		// Verbatim vendor-data collisions from niimbluelib itself (see PrinterModels' own javadoc)
+		// - first-table-match-wins, same as niimbluelib's own getPrinterMetaById. These assertions
+		// guard against the 67-model expansion accidentally reordering the table in a way that
+		// changes which model wins a collision.
+		assertEquals(PrinterModel.D11, PrinterModels.findById(512).get().getModel());
+		assertEquals(PrinterModel.D110, PrinterModels.findById(2305).get().getModel());
+		assertEquals(PrinterModel.A8, PrinterModels.findById(256).get().getModel());
+	}
 }

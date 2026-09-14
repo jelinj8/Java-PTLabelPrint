@@ -2,15 +2,50 @@ package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
 /**
  * Known Niimbot-protocol printer models, identified by the ID reported via
- * {@link PrinterInfoType#PRINTER_MODEL_ID}. Ported from a subset of niimbluelib's
- * {@code PrinterModel} (src/printer_models.ts, auto-generated there from the Niimbot app) -
- * covering only the D-series (closest reference for Phomemo's D/Q-series, per phomymo's own
- * grouping of the Q30 as "similar to D30") and M2_H (the closest published entry for the M2 in
- * hand). Extend {@link PrinterModels#TABLE} as more models are confirmed against real hardware,
- * rather than guessing IDs for models not yet tested - a Phomemo Q30's actual reported model ID is
- * not yet known and deliberately not guessed here (see {@link PrinterModels}).
+ * {@link PrinterInfoType#PRINTER_MODEL_ID}. Full port of niimbluelib's {@code PrinterModel} (src/
+ * printer_models.ts, auto-generated there from the Niimbot app) - all 77 models niimbluelib ships
+ * metadata for. Three further enum members niimbluelib itself declares but ships no
+ * {@code PrinterModelMeta} for ({@code D41}, {@code D61}, {@code DXX}) are deliberately not ported
+ * here - there is no upstream data to port for them either. See {@link PrinterModels} for the
+ * per-model metadata table and {@link NiimbotPrintTasks} for which models have a ported print
+ * flow - most models below have metadata only, no print task, matching niimbluelib's own coverage.
  */
 public enum PrinterModel {
+	A1_PRO,
+	A20,
+	A203,
+	A63,
+	A8,
+	A8_P,
+	B1,
+	B1_PRO,
+	B1_SE,
+	B11,
+	B16,
+	B18,
+	B18S,
+	B2,
+	B2_PRO,
+	B203,
+	B21,
+	B21_PRO,
+	B21_C2B,
+	B21_L2B,
+	B21S,
+	B21S_C2B,
+	B3,
+	B31,
+	B32,
+	B32R,
+	B3S,
+	B3S_A,
+	B3S_P,
+	B4,
+	B4_PRO,
+	B50,
+	B50W,
+	BETTY,
+	C1,
 	D101,
 	D11,
 	D11_H,
@@ -18,7 +53,39 @@ public enum PrinterModel {
 	D110,
 	D110_M,
 	D11S,
+	EP1C,
+	EP2M_H,
+	EP3M,
+	ET10,
+	FUST,
+	H1,
+	H1S,
 	HI_D110,
 	HI_NB_D11,
-	M2_H
+	JC_M90,
+	JCB3S,
+	K2,
+	K3,
+	K3_ITD,
+	K3_W,
+	K4,
+	M2_H,
+	M3,
+	MP3K,
+	MP3K_W,
+	N1,
+	P1,
+	P18,
+	P1S,
+	S1,
+	S3,
+	S6,
+	S6_P,
+	T2S,
+	T6,
+	T7,
+	T8,
+	T8S,
+	TP2M_H,
+	Z401
 }

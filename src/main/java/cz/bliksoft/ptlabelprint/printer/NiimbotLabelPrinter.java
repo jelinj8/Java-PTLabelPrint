@@ -13,23 +13,22 @@ import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterInfo;
  * {@link NiimbotDevice} - {@link #getDevice()} is the real, full-capability API (print flow,
  * heartbeat, RFID, etc.); this class only adds the family/definition bookkeeping the abstraction
  * layer needs.
+ *
+ * <p>
+ * Extends {@link AbstractLabelPrinter} directly, not through an intermediate
+ * {@code NiimbotLabelPrinter}-family class the way {@link PhomemoDSeriesLabelPrinter} extends
+ * {@link PhomemoLabelPrinter}: there is exactly one concrete Niimbot {@link LabelPrinter} subclass
+ * and no foreseeable sibling today. If/when a second one is ever needed, extract an intermediate
+ * class following {@link PhomemoLabelPrinter}'s exact pattern rather than duplicating its
+ * connect/close/isConnected bodies here first.
  */
-public class NiimbotLabelPrinter implements LabelPrinter {
+public class NiimbotLabelPrinter extends AbstractLabelPrinter {
 
-	private final PrinterDefinition definition;
 	private final NiimbotDevice device;
 
 	public NiimbotLabelPrinter(PrinterDefinition definition, BlePeripheral peripheral) {
-		if (definition.getFamily() != PrinterFamily.NIIMBOT) {
-			throw new IllegalArgumentException("Definition " + definition + " is not a NIIMBOT printer");
-		}
-		this.definition = definition;
+		super(definition, PrinterFamily.NIIMBOT);
 		this.device = new NiimbotDevice(new BleTransport(peripheral));
-	}
-
-	@Override
-	public PrinterDefinition getDefinition() {
-		return definition;
 	}
 
 	/** The full Niimbot device API - connect handshake result, printer info, print flow, etc. */

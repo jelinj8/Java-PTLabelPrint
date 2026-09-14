@@ -52,6 +52,8 @@ public class PacketGenerator {
 		COMMANDS_MAP.put(RequestCommandId.PRINT_START, Collections.singletonList(ResponseCommandId.IN_PRINT_START));
 		COMMANDS_MAP.put(RequestCommandId.PRINT_END, Collections.singletonList(ResponseCommandId.IN_PRINT_END));
 		COMMANDS_MAP.put(RequestCommandId.SET_PAGE_SIZE, Collections.singletonList(ResponseCommandId.IN_SET_PAGE_SIZE));
+		COMMANDS_MAP.put(RequestCommandId.PRINT_CLEAR, Collections.singletonList(ResponseCommandId.IN_PRINT_CLEAR));
+		COMMANDS_MAP.put(RequestCommandId.PRINT_QUANTITY, Collections.singletonList(ResponseCommandId.IN_PRINT_QUANTITY));
 	}
 
 	private PacketGenerator() {
@@ -133,6 +135,28 @@ public class PacketGenerator {
 		return mapped(RequestCommandId.PRINT_END, new byte[] {1});
 	}
 
+	/** Clears the current (possibly partial) print job - used by {@code OldD11PrintTask}/{@code D110PrintTask} at the start of each page. */
+	public static NiimbotPacket printClear() {
+		return mapped(RequestCommandId.PRINT_CLEAR, new byte[] {1});
+	}
+
+	/** Used by {@code OldD11PrintTask}/{@code D110PrintTask}. */
+	public static NiimbotPacket setPrintQuantity(int quantity) {
+		byte[] q = u16(quantity);
+		return mapped(RequestCommandId.PRINT_QUANTITY, new byte[] {q[0], q[1]});
+	}
+
+	/** Used by {@code OldD11PrintTask}/{@code D110PrintTask}/{@code B21V1PrintTask}/{@code B21L2BPrintTask}. */
+	public static NiimbotPacket printStart1b() {
+		return mapped(RequestCommandId.PRINT_START, new byte[] {1});
+	}
+
+	/** First seen on H1S - used by {@code H1SPrintTask}. */
+	public static NiimbotPacket printStart2b(int totalPages) {
+		byte[] pages = u16(totalPages);
+		return mapped(RequestCommandId.PRINT_START, new byte[] {pages[0], pages[1]});
+	}
+
 	/**
 	 * Used by {@link B1PrintTask} (B1, D110_M, B21_C2B, M2_H, N1, D101 in niimbluelib's own
 	 * model-dispatch table - notably including the M2_H, the "D110M v4" {@link #printStart9b} does
@@ -151,6 +175,36 @@ public class PacketGenerator {
 				pages[0], pages[1], 0x00, 0x00, 0x00, 0x00, (byte) pageColor.getCode(), (byte) speed,
 				(byte) (someFlag ? 1 : 0),
 		});
+	}
+
+	/** Used by {@code OldD11PrintTask}. */
+	public static NiimbotPacket setPageSize2b(int rows) {
+		byte[] rowsB = u16(rows);
+		return mapped(RequestCommandId.SET_PAGE_SIZE, new byte[] {rowsB[0], rowsB[1]});
+	}
+
+	/** Used by {@code D110PrintTask}/{@code B21V1PrintTask}/{@code B21L2BPrintTask}. */
+	public static NiimbotPacket setPageSize4b(int rows, int cols) {
+		byte[] rowsB = u16(rows);
+		byte[] colsB = u16(cols);
+		return mapped(RequestCommandId.SET_PAGE_SIZE, new byte[] {rowsB[0], rowsB[1], colsB[0], colsB[1]});
+	}
+
+	/** First seen on H1S - used by {@code H1SPrintTask}. */
+	public static NiimbotPacket setPageSize9b(int rows, int cols, int copiesCount, int cutHeight, int cutType) {
+		byte[] rowsB = u16(rows);
+		byte[] colsB = u16(cols);
+		byte[] copiesB = u16(copiesCount);
+		byte[] cutHeightB = u16(cutHeight);
+
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		out.write(rowsB, 0, 2);
+		out.write(colsB, 0, 2);
+		out.write(copiesB, 0, 2);
+		out.write(cutHeightB, 0, 2);
+		out.write(cutType);
+
+		return mapped(RequestCommandId.SET_PAGE_SIZE, out.toByteArray());
 	}
 
 	/** Used by {@link B1PrintTask}. */
@@ -250,21 +304,30 @@ public class PacketGenerator {
 		return p;
 	}
 
+	/** {@link #writeImageDataSingleColor(EncodedImage, int, String)} with niimbluelib's default {@code countsMode} ({@code "auto"}). */
+	public static List<NiimbotPacket> writeImageDataSingleColor(EncodedImage image, int printheadPixels) {
+		return writeImageDataSingleColor(image, printheadPixels, "auto");
+	}
+
 	/**
 	 * Builds the one-way bitmap-row/empty-row packet stream for a single-color {@link EncodedImage}.
-	 * Ported from niimbluelib's {@code writeImageDataSingleColor} - the "check line" packet
-	 * (sent periodically on very tall images) isn't ported, matching {@link NiimbotImageEncoder}'s
-	 * own note.
+	 * Ported from niimbluelib's {@code writeImageDataSingleColor} - the "check line" packet (sent
+	 * periodically on very tall images, {@code enableCheckLine} in niimbluelib) isn't ported,
+	 * matching {@link NiimbotImageEncoder}'s own note ({@link NiimbotImageEncoder} never emits
+	 * {@link ImageRow.DataType#CHECK} rows in the first place, so there is nothing for this method
+	 * to act on yet even for a caller that wants it, e.g. {@code B21V1PrintTask}/
+	 * {@code B21L2BPrintTask} - both simply don't get periodic check-line packets, which is a
+	 * self-test convenience, not something required for a page to print correctly).
 	 */
-	public static List<NiimbotPacket> writeImageDataSingleColor(EncodedImage image, int printheadPixels) {
+	public static List<NiimbotPacket> writeImageDataSingleColor(EncodedImage image, int printheadPixels, String countsMode) {
 		List<NiimbotPacket> out = new ArrayList<>();
 
 		for (ImageRow row : image.getRowsData()) {
 			if (row.getDataType() == ImageRow.DataType.PIXELS) {
 				if (row.getBlackPixelsCount() <= 6) {
-					out.add(printBitmapRowIndexed(row.getRowNumber(), row.getRepeat(), row.getRowDataBlack(), printheadPixels, "auto"));
+					out.add(printBitmapRowIndexed(row.getRowNumber(), row.getRepeat(), row.getRowDataBlack(), printheadPixels, countsMode));
 				} else {
-					out.add(printBitmapRow(row.getRowNumber(), row.getRepeat(), row.getRowDataBlack(), printheadPixels, "auto"));
+					out.add(printBitmapRow(row.getRowNumber(), row.getRepeat(), row.getRowDataBlack(), printheadPixels, countsMode));
 				}
 			} else if (row.getDataType() == ImageRow.DataType.VOID) {
 				out.add(printEmptySpace(row.getRowNumber(), row.getRepeat()));

@@ -1,6 +1,7 @@
 package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -344,6 +345,71 @@ public class NiimbotDevice {
 						+ status.getPage() + "/" + pagesToPrint + ")");
 			}
 			sleep(pollIntervalMs);
+		}
+	}
+
+	/**
+	 * Like {@link #waitUntilPrintFinishedByStatusPoll}, but for tasks (e.g. {@code B21V1PrintTask})
+	 * whose printer reports completion only via {@link #printEnd()} returning {@code true} on a
+	 * retry, not via {@link #getPrintStatus()}. Ported from niimbluelib's
+	 * {@code waitUntilPrintFinishedByPrintEndPoll}.
+	 */
+	public void waitUntilPrintFinishedByPrintEndPoll(long pollIntervalMs, long overallTimeoutMs) throws IOException, TimeoutException {
+		long deadline = System.currentTimeMillis() + overallTimeoutMs;
+
+		while (true) {
+			if (printEnd()) {
+				return;
+			}
+			if (System.currentTimeMillis() > deadline) {
+				throw new TimeoutException("Timeout waiting for print end poll");
+			}
+			sleep(pollIntervalMs);
+		}
+	}
+
+	/**
+	 * Blocks until an <i>unsolicited</i> {@code IN_PRINTER_PAGE_INDEX} packet reports
+	 * {@code pagesToPrint} - unlike every other {@code waitUntilPrintFinished*} method, the printer
+	 * pushes these on its own rather than responding to a request, so this listens passively
+	 * instead of sending anything. {@code timeoutMs} resets on every page-index packet received
+	 * (matches niimbluelib's own {@code waitUntilPrintFinishedByPageIndex}). Used by
+	 * {@code OldD11PrintTask}.
+	 */
+	public void waitForPageIndex(int pagesToPrint, long timeoutMs) throws IOException, TimeoutException {
+		lock.lock();
+		try {
+			resultQueue.clear();
+			awaitedIds = Collections.singletonList(ResponseCommandId.IN_PRINTER_PAGE_INDEX);
+			long deadline = System.currentTimeMillis() + timeoutMs;
+
+			while (true) {
+				long remaining = deadline - System.currentTimeMillis();
+				if (remaining <= 0) {
+					throw new TimeoutException("Timeout waiting for page index " + pagesToPrint);
+				}
+
+				NiimbotPacket packet;
+				try {
+					packet = resultQueue.poll(remaining, TimeUnit.MILLISECONDS);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IOException("Interrupted while waiting for page index", e);
+				}
+				if (packet == null) {
+					throw new TimeoutException("Timeout waiting for page index " + pagesToPrint);
+				}
+
+				byte[] data = packet.getData();
+				int page = ((data[0] & 0xff) << 8) | (data[1] & 0xff);
+				deadline = System.currentTimeMillis() + timeoutMs;
+				if (page == pagesToPrint) {
+					return;
+				}
+			}
+		} finally {
+			awaitedIds = null;
+			lock.unlock();
 		}
 	}
 
