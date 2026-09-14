@@ -2,9 +2,11 @@
 
 Java client library and CLI for BLE (optionally Serial/USB) label printers across manufacturers -
 a printer abstraction layer over one or more wire-protocol families, so callers work against one
-typed API regardless of brand. A Niimbot D11_H, a Niimbot M2, and a Phomemo Q30 are available for
+typed connection API regardless of brand (see "Printer abstraction layer" below for what's unified
+vs. kept family-specific). A Niimbot D11_H, a Niimbot M2, and a Phomemo Q30 are available for
 real-hardware testing; **both the Niimbot and Phomemo `d-series` protocols print successfully on
-real hardware** (see "Status").
+real hardware**, and the abstraction layer's auto-detect+connect is confirmed working end to end
+against the D11_H (see "Status").
 
 ## Status
 
@@ -39,8 +41,25 @@ on a real Q30**:
 ```
 
 **Neither device advertises the Niimbot service UUID `scan`/`BleTransport.scanFilter()` filter on**
-- confirmed for both the Q30 and a genuine D11_H (found instead via an unfiltered scan, by name:
-`D11_H-<serial>`). Not fixed yet; see CLAUDE.md's "Status" for the full note.
+- confirmed for both the Q30 and a genuine D11_H. Fixed by the printer abstraction layer's
+`discover` command instead (see below) - `scan`'s own filter is left as a Niimbot-specific tool.
+
+## Printer abstraction layer
+
+`cz.bliksoft.ptlabelprint.printer` auto-detects a printer's protocol family from its BLE advertised
+name (`PrinterCatalog`, mirroring phomymo's own `detectPrinterConfig`) and dispatches to a unified
+connect lifecycle (`LabelPrinter`/`PrinterFactory`) - **confirmed against real hardware**:
+
+```bash
+./ptlabelprint-cli.sh discover                 # unfiltered scan + guessed family per device -
+                                                # correctly identified a real D11_H live over the air
+./ptlabelprint-cli.sh connect <BLE address>    # auto-detect + connect through the abstraction layer
+```
+
+Printing itself stays family-specific (`NiimbotLabelPrinter`/`PhomemoDSeriesLabelPrinter`) rather
+than forced into one signature - see `LabelPrinter`'s javadoc for why (the two families' real
+capabilities, like Niimbot's info-query catalog vs. Phomemo's complete absence of one, genuinely
+differ enough that unifying print() would either lose capability or mislead).
 
 **Corrected finding**: a Phomemo Q30 does **not** speak the Niimbot protocol - live testing plus
 reading phomymo's own source confirmed it speaks a completely different, ESC/POS-derived,
@@ -59,8 +78,8 @@ fixed 128-byte chunks) - confirmed correct once tested with reliable power. See 
 "Debugging history" for the full account - useful precedent before bringing up another device.
 
 Not implemented yet: a real image pipeline (dithering/scaling arbitrary images into a raster -
-`phomemo-print-test` hand-builds a trivial one), Phomemo's other sub-protocols, the printer
-abstraction layer, and a Serial transport.
+the print-test commands hand-build a trivial one each), Phomemo's other sub-protocols, and a
+Serial transport.
 
 ## Scope
 
@@ -69,8 +88,8 @@ below.
 
 - **phomemo** (`d-series` implemented and hardware-confirmed) - Phomemo's own printer families,
   most relevantly `d-series` (D30/D35/D50/D110/Q30/Q30S).
-- **niimbot** (implemented, unverified against real hardware yet) - Niimbot-branded printers
-  (D11_H, M2) only.
+- **niimbot** (implemented and hardware-confirmed on a D11_H) - Niimbot-branded printers (D11_H,
+  M2) only.
 
 Zebra (ZPL) and Brother P-touch support are planned as additional protocol families (see below).
 
@@ -105,9 +124,9 @@ Zebra (ZPL) and Brother P-touch support are planned as additional protocol famil
   [cbdevnet/pt1230](https://github.com/cbdevnet/pt1230) (no declared license - reference-only).
 
 The printer abstraction layer (`cz.bliksoft.ptlabelprint.printer`) is what dispatches across these
-families - declarative per-model definitions (label width/DPI, rotation/alignment quirks, which
-protocol family a model speaks) plus auto-detection from the BLE advertised name, modeled on
-phomymo's `printers.json` + auto-detect approach. Not implemented yet.
+families - see "Printer abstraction layer" above for what's implemented and confirmed so far
+(`niimbot`/`phomemo_d_series` only; extend `PrinterCatalog` as `zebra`/`brother`/other `phomemo`
+sub-protocols get implemented).
 
 ## Licensing note on protocol research
 
@@ -168,8 +187,7 @@ mvn test
 are all `provided` - a consuming application pulls in only the one(s) it actually uses on its own
 runtime classpath.
 
-`common-java-utils-ble` is currently pinned to a local `0.5.0-SNAPSHOT` install (for its unified
-`ScanFilter` API) - install it first: `cd ../BSToolbox-BLE && mvn install`.
+`common-java-utils-ble` is on the published `0.5.0` release (for its unified `ScanFilter` API).
 
 ## CLI distribution
 

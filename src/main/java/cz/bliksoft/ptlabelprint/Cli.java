@@ -10,8 +10,10 @@ import cz.bliksoft.javautils.ble.BleService;
 import cz.bliksoft.javautils.ble.ScanFilter;
 import cz.bliksoft.javautils.ble.utils.BleUtils;
 import cz.bliksoft.ptlabelprint.protocol.BleTransport;
+import cz.bliksoft.ptlabelprint.protocol.niimbot.B1PrintTask;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.D110V4PrintTask;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.EncodedImage;
+import cz.bliksoft.ptlabelprint.protocol.niimbot.HeartbeatData;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.LabelType;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.NiimbotDevice;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.NiimbotImageEncoder;
@@ -19,26 +21,35 @@ import cz.bliksoft.ptlabelprint.protocol.niimbot.PageColorType;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PixelSource;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PrintOptions;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterInfo;
+import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterModel;
+import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterModelMeta;
+import cz.bliksoft.ptlabelprint.protocol.niimbot.RfidInfo;
 import cz.bliksoft.ptlabelprint.protocol.phomemo.DSeriesPrinter;
 import cz.bliksoft.ptlabelprint.protocol.phomemo.RasterImage;
+import cz.bliksoft.ptlabelprint.printer.LabelPrinter;
+import cz.bliksoft.ptlabelprint.printer.NiimbotLabelPrinter;
+import cz.bliksoft.ptlabelprint.printer.PrinterCatalog;
+import cz.bliksoft.ptlabelprint.printer.PrinterDefinition;
+import cz.bliksoft.ptlabelprint.printer.PrinterFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
 /**
- * Command-line front end for PtLabelPrint. Only the Niimbot protocol family ({@link NiimbotDevice})
- * is wired up so far - {@code scan}/{@code info} exercise connect and printer-info retrieval
- * against Niimbot-branded printers specifically (D11_H, M2), not Phomemo's (confirmed via real Q30
- * hardware to speak an unrelated protocol - see the project CLAUDE.md's "Status" section).
- * {@code gatt}/{@code raw} are protocol-agnostic diagnostics for bringing up a new/unfamiliar
- * device's BLE channel by hand. Phomemo support and configure/print commands land here once
- * {@code cz.bliksoft.ptlabelprint.protocol.phomemo} exists.
+ * Command-line front end for PtLabelPrint. {@code scan}/{@code info} exercise
+ * {@code protocol.niimbot} specifically; {@code phomemo-print-test} exercises
+ * {@code protocol.phomemo}'s {@code d-series}; {@code gatt}/{@code raw} are protocol-agnostic
+ * diagnostics for bringing up a new/unfamiliar device's BLE channel by hand. {@code discover} and
+ * {@code connect} instead go through the {@code cz.bliksoft.ptlabelprint.printer} abstraction
+ * layer - manufacturer-agnostic BLE-name-based family detection plus a unified connect lifecycle
+ * (see {@link LabelPrinter}'s own javadoc for why printing itself still isn't unified).
  */
 @Command(name = "ptlabelprint-cli", mixinStandardHelpOptions = true, version = "ptlabelprint 0.1.0-SNAPSHOT",
-		description = "CLI for Niimbot-protocol label printers (BLE, optionally Serial/USB) plus protocol-agnostic BLE diagnostics.",
-		subcommands = {Cli.ScanCommand.class, Cli.InfoCommand.class, Cli.RawCommand.class, Cli.GattCommand.class,
-				Cli.PhomemoPrintTestCommand.class, Cli.NiimbotPrintTestCommand.class})
+		description = "CLI for Niimbot/Phomemo label printers (BLE, optionally Serial/USB) plus protocol-agnostic BLE diagnostics.",
+		subcommands = {Cli.ScanCommand.class, Cli.InfoCommand.class, Cli.MediaCommand.class, Cli.RawCommand.class,
+				Cli.GattCommand.class, Cli.PhomemoPrintTestCommand.class, Cli.NiimbotPrintTestCommand.class,
+				Cli.DiscoverCommand.class, Cli.ConnectCommand.class})
 public class Cli implements Runnable {
 
 	public static void main(String[] args) {
@@ -109,6 +120,69 @@ public class Cli implements Runnable {
 					PrinterInfo info = device.connect();
 					System.out.println(info);
 					device.getModelMetadata().ifPresent(meta -> System.out.println("Model metadata: " + meta.getModel()));
+				} finally {
+					device.disconnect();
+				}
+			}
+			return 0;
+		}
+	}
+
+	@Command(name = "media",
+			description = "Connect to a printer and query its live state (lid/paper/RFID-lock) and loaded-roll RFID info.")
+	static class MediaCommand implements Callable<Integer> {
+
+		@Parameters(index = "0", description = "BLE address of the printer (see 'scan').")
+		String address;
+
+		@Option(names = {"-t", "--scan-timeout"},
+				description = "How long to scan for the address before connecting, in ms (default: ${DEFAULT-VALUE}).")
+		long scanTimeoutMs = 5000;
+
+		@Option(names = {"-v", "--debug"}, description = "Log raw TX/RX packet bytes to stderr.")
+		boolean debug;
+
+		@Override
+		public Integer call() throws Exception {
+			try (BleAdapter adapter = new BleAdapter()) {
+				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
+
+				if (found.isEmpty()) {
+					System.err.println("Device " + address + " not found during scan (run 'scan' first to confirm the address).");
+					return 1;
+				}
+
+				BlePeripheral peripheral = found.get(0).getPeripheral(adapter);
+				NiimbotDevice device = new NiimbotDevice(new BleTransport(peripheral));
+				device.setDebug(debug);
+
+				try {
+					device.connect();
+
+					try {
+						HeartbeatData heartbeat = device.heartbeat();
+						System.out.println("State: lidClosed=" + heartbeat.getLidClosed() + ", paperInserted="
+								+ heartbeat.getPaperInserted() + ", paperRfidSuccess=" + heartbeat.getPaperRfidSuccess()
+								+ ", ribbonInserted=" + heartbeat.getRibbonInserted() + ", ribbonRfidSuccess="
+								+ heartbeat.getRibbonRfidSuccess() + ", batteryPercents=" + heartbeat.getBatteryPercents()
+								+ ", temp=" + heartbeat.getTemp());
+					} catch (Exception e) {
+						System.out.println("State: heartbeat query failed: " + e);
+					}
+
+					try {
+						RfidInfo paper = device.rfidInfo();
+						System.out.println("Loaded media (paper RFID): " + paper);
+					} catch (Exception e) {
+						System.out.println("Loaded media (paper RFID): query failed: " + e);
+					}
+
+					try {
+						RfidInfo ribbon = device.rfidInfo2();
+						System.out.println("Loaded media (ribbon RFID): " + ribbon);
+					} catch (Exception e) {
+						System.out.println("Loaded media (ribbon RFID): query failed: " + e);
+					}
 				} finally {
 					device.disconnect();
 				}
@@ -373,16 +447,17 @@ public class Cli implements Runnable {
 	}
 
 	/**
-	 * Prints a small validation test pattern via {@link D110V4PrintTask} - the print task
-	 * niimbluelib's own model dispatch table assigns to Niimbot's D11_H (also D110_M protocol v4,
-	 * B21_PRO, B1_PRO, C1, EP1C - untested here). Uses real consumables. Unlike Phomemo's
+	 * Prints a small validation test pattern, dispatching to whichever print task niimbluelib's own
+	 * model dispatch table assigns: {@link D110V4PrintTask} for the D11_H (also D110_M protocol v4,
+	 * B21_PRO, B1_PRO, C1, EP1C - untested here), {@link B1PrintTask} for the M2_H (also B1, D110_M
+	 * protocol &lt; 4, B21_C2B, N1, D101 - untested here). Uses real consumables. Unlike Phomemo's
 	 * {@code d-series}, the Niimbot protocol doesn't require the image width to exactly match the
 	 * printhead's physical capacity (the printer accepts whatever {@code cols} the caller
 	 * declares) - this test still uses the connected printer's own confirmed printhead width for a
 	 * full-width, unambiguous test print.
 	 */
 	@Command(name = "niimbot-print-test",
-			description = "Print a small test pattern to a Niimbot-branded printer (D11_H tested; likely also D110_M v4/B21_PRO/B1_PRO/C1/EP1C). Uses real consumables.")
+			description = "Print a small test pattern to a Niimbot-branded printer (D11_H/M2_H tested; likely also D110_M/B21_PRO/B1_PRO/C1/EP1C/B1/B21_C2B/N1/D101). Uses real consumables.")
 	static class NiimbotPrintTestCommand implements Callable<Integer> {
 
 		@Parameters(index = "0", description = "BLE address of the printer (see 'scan').")
@@ -428,11 +503,24 @@ public class Cli implements Runnable {
 							.setDensity(density)
 							.setTotalPages(1);
 
-					D110V4PrintTask task = new D110V4PrintTask(device, options);
-					task.printInit();
-					task.printPage(image, 1);
-					task.waitForFinished();
-					task.printEnd();
+					// M2_H uses niimbluelib's "B1" print task, not "D110M_V4" (despite the D11_H/D110_M-v4
+					// naming similarity) - see B1PrintTask's own javadoc for the model-dispatch table.
+					boolean useB1Task = device.getModelMetadata().map(PrinterModelMeta::getModel)
+							.map(m -> m == PrinterModel.M2_H).orElse(false);
+
+					if (useB1Task) {
+						B1PrintTask task = new B1PrintTask(device, options);
+						task.printInit();
+						task.printPage(image, 1);
+						task.waitForFinished();
+						task.printEnd();
+					} else {
+						D110V4PrintTask task = new D110V4PrintTask(device, options);
+						task.printInit();
+						task.printPage(image, 1);
+						task.waitForFinished();
+						task.printEnd();
+					}
 
 					System.out.println("Done.");
 				} finally {
@@ -461,6 +549,105 @@ public class Cli implements Runnable {
 					return x >= margin && x < cols - margin && y >= margin && y < rows - margin;
 				}
 			};
+		}
+	}
+
+	/**
+	 * Unfiltered scan cross-referenced against {@link PrinterCatalog} - the manufacturer-agnostic
+	 * replacement for {@code scan}'s Niimbot-service-UUID filter, which (per this project's own
+	 * real-hardware testing) neither a genuine Niimbot D11_H nor a Phomemo Q30 actually advertises.
+	 */
+	@Command(name = "discover", description = "Unfiltered BLE scan, showing the guessed printer family (if any) for each device found.")
+	static class DiscoverCommand implements Callable<Integer> {
+
+		@Option(names = {"-t", "--timeout"}, description = "Scan duration in milliseconds (default: ${DEFAULT-VALUE}).")
+		long timeoutMs = 5000;
+
+		@Override
+		public Integer call() throws Exception {
+			try (BleAdapter adapter = new BleAdapter()) {
+				List<BleUtils.BleDeviceResult> results = BleUtils.scan(adapter, timeoutMs);
+
+				if (results.isEmpty()) {
+					System.out.println("No devices found.");
+					return 0;
+				}
+
+				for (BleUtils.BleDeviceResult r : results) {
+					List<PrinterDefinition> matches = PrinterCatalog.detect(r.getName());
+					String guess;
+					if (matches.isEmpty()) {
+						guess = "-";
+					} else if (matches.size() == 1) {
+						guess = matches.get(0).toString();
+					} else {
+						guess = "AMBIGUOUS " + matches;
+					}
+
+					System.out.printf("%s\t%s\trssi=%s\t%s%n", r.getAddress(), r.getName() != null ? r.getName() : "-",
+							r.getRssi() != null ? r.getRssi() : "-", guess);
+				}
+			}
+			return 0;
+		}
+	}
+
+	/**
+	 * Connects through the {@link cz.bliksoft.ptlabelprint.printer} abstraction layer: detects the
+	 * family from the device's advertised name (see {@link PrinterCatalog}), then dispatches to the
+	 * matching {@link LabelPrinter}. For Niimbot, prints the same {@link PrinterInfo} {@code info}
+	 * does; Phomemo's {@code d-series} has no info-query capability at all (see
+	 * {@link cz.bliksoft.ptlabelprint.printer.PhomemoDSeriesLabelPrinter}'s javadoc), so a
+	 * successful connect is all this can report for it.
+	 */
+	@Command(name = "connect", description = "Auto-detect a printer's family by name and connect through the printer abstraction layer.")
+	static class ConnectCommand implements Callable<Integer> {
+
+		@Parameters(index = "0", description = "BLE address of the printer (see 'discover').")
+		String address;
+
+		@Option(names = {"-t", "--scan-timeout"},
+				description = "How long to scan for the address before connecting, in ms (default: ${DEFAULT-VALUE}).")
+		long scanTimeoutMs = 5000;
+
+		@Override
+		public Integer call() throws Exception {
+			try (BleAdapter adapter = new BleAdapter()) {
+				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
+
+				if (found.isEmpty()) {
+					System.err.println("Device " + address + " not found during scan (run 'discover' first to confirm the address).");
+					return 1;
+				}
+
+				BleUtils.BleDeviceResult result = found.get(0);
+				List<PrinterDefinition> matches = PrinterCatalog.detect(result.getName());
+
+				if (matches.isEmpty()) {
+					System.err.println("Could not detect a known printer family from name \"" + result.getName()
+							+ "\" - see 'gatt'/'raw' for protocol-agnostic bring-up instead.");
+					return 1;
+				}
+				if (matches.size() > 1) {
+					System.err.println("Ambiguous match for name \"" + result.getName() + "\": " + matches);
+					return 1;
+				}
+
+				PrinterDefinition definition = matches.get(0);
+				System.out.println("Detected: " + definition);
+
+				try (LabelPrinter printer = PrinterFactory.create(definition, result.getPeripheral(adapter))) {
+					printer.connect();
+					System.out.println("Connected.");
+
+					if (printer instanceof NiimbotLabelPrinter) {
+						System.out.println(((NiimbotLabelPrinter) printer).getPrinterInfo());
+					} else {
+						System.out.println("(no info-query capability for this protocol family)");
+					}
+				}
+			}
+			return 0;
 		}
 	}
 }

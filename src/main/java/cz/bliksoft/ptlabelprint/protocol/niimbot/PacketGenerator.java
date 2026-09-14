@@ -10,12 +10,13 @@ import java.util.Map;
 
 /**
  * Builds request packets. Ported from niimbluelib's {@code PacketGenerator}
- * (src/packets/packet_generator.ts). Covers connect/info/heartbeat/misc config plus the single
- * print flow this project has ported so far - the {@code D110M_V4} print task's commands
+ * (src/packets/packet_generator.ts). Covers connect/info/heartbeat/misc config plus the two print
+ * flows this project has ported so far - the {@code D110M_V4} print task's commands
  * ({@code printStart9b}/{@code setPageSize13b}/bitmap rows/{@code pageEnd}/{@code printEnd}; see
- * {@link D110V4PrintTask}). Other print tasks' packet variants ({@code printStart1b/2b/7b},
- * {@code setPageSize2b/4b/6b}, firmware upgrade) are not ported - add them if/when a model needing
- * a different print task shows up.
+ * {@link D110V4PrintTask}) and the {@code B1} print task's commands ({@code printStart7b}/
+ * {@code setPageSize6b}; see {@link B1PrintTask}). Other print tasks' packet variants
+ * ({@code printStart1b/2b}, {@code setPageSize2b/4b/9b}, firmware upgrade) are not ported - add
+ * them if/when a model needing a different print task shows up.
  */
 public class PacketGenerator {
 
@@ -132,6 +133,17 @@ public class PacketGenerator {
 		return mapped(RequestCommandId.PRINT_END, new byte[] {1});
 	}
 
+	/**
+	 * Used by {@link B1PrintTask} (B1, D110_M, B21_C2B, M2_H, N1, D101 in niimbluelib's own
+	 * model-dispatch table - notably including the M2_H, the "D110M v4" {@link #printStart9b} does
+	 * <b>not</b> cover despite the superficially similar naming).
+	 */
+	public static NiimbotPacket printStart7b(int totalPages, PageColorType pageColor) {
+		byte[] pages = u16(totalPages);
+		return mapped(RequestCommandId.PRINT_START,
+				new byte[] {pages[0], pages[1], 0x00, 0x00, 0x00, 0x00, (byte) pageColor.getCode()});
+	}
+
 	/** First seen on D110M v4 - used by {@link D110V4PrintTask}. */
 	public static NiimbotPacket printStart9b(int totalPages, PageColorType pageColor, int speed, boolean someFlag) {
 		byte[] pages = u16(totalPages);
@@ -139,6 +151,20 @@ public class PacketGenerator {
 				pages[0], pages[1], 0x00, 0x00, 0x00, 0x00, (byte) pageColor.getCode(), (byte) speed,
 				(byte) (someFlag ? 1 : 0),
 		});
+	}
+
+	/** Used by {@link B1PrintTask}. */
+	public static NiimbotPacket setPageSize6b(int rows, int cols, int copiesCount) {
+		byte[] rowsB = u16(rows);
+		byte[] colsB = u16(cols);
+		byte[] copiesB = u16(copiesCount);
+
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		out.write(rowsB, 0, 2);
+		out.write(colsB, 0, 2);
+		out.write(copiesB, 0, 2);
+
+		return mapped(RequestCommandId.SET_PAGE_SIZE, out.toByteArray());
 	}
 
 	/**

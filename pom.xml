@@ -41,7 +41,7 @@
 		<maven.compiler.release>8</maven.compiler.release>
 		<junit.version>5.10.2</junit.version>
 		<jserialcomm.version>2.11.4</jserialcomm.version>
-		<bstoolbox-ble.version>0.5.0-SNAPSHOT</bstoolbox-ble.version>
+		<bstoolbox-ble.version>0.5.0</bstoolbox-ble.version>
 		<bstoolbox.version>0.8</bstoolbox.version>
 		<picocli.version>4.7.6</picocli.version>
 	</properties>
@@ -50,10 +50,8 @@
 		<!-- BLE transport (the printer's primary interface). "provided": a consuming application
 			supplies this sibling library on its own runtime classpath only if it actually uses the
 			BLE transport - same reasoning as java-bshmidriver's own BSToolbox-BLE dependency.
-			Pinned to a local 0.5.0-SNAPSHOT install for the unified ScanFilter address/name matching
-			API (withAddress/withName/withMatchingAddress/withMatchingName) - install it locally
-			first: `cd ../BSToolbox-BLE && mvn install`. Move to a published release once one ships
-			with that API. -->
+			0.5.0 is the first published release with the unified ScanFilter address/name matching
+			API (withAddress/withName/withMatchingAddress/withMatchingName) this project needs. -->
 		<dependency>
 			<groupId>cz.bliksoft.java</groupId>
 			<artifactId>common-java-utils-ble</artifactId>
@@ -61,12 +59,12 @@
 			<scope>provided</scope>
 		</dependency>
 
-		<!-- Workaround: the installed 0.5.0-SNAPSHOT's flattened POM drops its own jackson-databind
-			dependency entirely (a flatten-maven-plugin issue in that project, which has unrelated WIP
-			changes as of this writing - not something to fix from here), so BleAdapter throws
-			NoClassDefFoundError at runtime without this. Declared directly, "provided" to match
-			common-java-utils-ble's own scope; version matches that project's pom.xml. Remove once
-			BSToolbox-BLE's published POM correctly carries this transitively again. -->
+		<!-- Workaround: 0.5.0's own flattened POM drops its jackson-databind dependency entirely
+			(a flatten-maven-plugin issue in that project - confirmed present in the actual released
+			0.5.0 POM, not just an older snapshot; not something to fix from here), so BleAdapter
+			throws NoClassDefFoundError at runtime without this. Declared directly, "provided" to
+			match common-java-utils-ble's own scope; version matches that project's pom.xml. Remove
+			once BSToolbox-BLE's published POM correctly carries this transitively again. -->
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
