@@ -1,0 +1,308 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>cz.bliksoft.ptlabelprint</groupId>
+	<artifactId>ptlabelprint</artifactId>
+	<version>${revision}</version>
+
+	<name>PtLabelPrint</name>
+	<description>Java client library and CLI for BLE (optionally Serial/USB) label printers across
+		manufacturers - a printer abstraction layer over one or more protocol families, starting
+		with the Niimbot-compatible protocol (covers Niimbot-branded printers and compatible clones
+		such as Phomemo's D/Q-series), ported from niimbluelib's protocol layer. Zebra (ZPL) and
+		Brother P-touch support are planned as additional protocol families. Send images to the
+		printer and read back its properties through a typed control API.</description>
+
+	<!-- TODO: fill in url/scm once this project has a real GitHub repo; the release profile's
+		javadoc/source jars don't require them, only a "mvn deploy" to Central would. -->
+
+	<licenses>
+		<!-- MIT, matching niimbluelib (https://github.com/MultiMote/niimbluelib), the protocol
+			implementation this project ports - not LGPL like the other Bliksoft libraries. -->
+		<license>
+			<name>MIT License</name>
+			<url>https://opensource.org/licenses/MIT</url>
+			<distribution>repo</distribution>
+		</license>
+	</licenses>
+
+	<developers>
+		<developer>
+			<id>jelinj8</id>
+			<name>Jakub Jelínek</name>
+			<email>jakub.jelinek@gmail.com</email>
+		</developer>
+	</developers>
+
+	<properties>
+		<revision>0.1.0-SNAPSHOT</revision>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<maven.compiler.release>8</maven.compiler.release>
+		<junit.version>5.10.2</junit.version>
+		<jserialcomm.version>2.11.4</jserialcomm.version>
+		<bstoolbox-ble.version>0.5.0-SNAPSHOT</bstoolbox-ble.version>
+		<bstoolbox.version>0.8</bstoolbox.version>
+		<picocli.version>4.7.6</picocli.version>
+	</properties>
+
+	<dependencies>
+		<!-- BLE transport (the printer's primary interface). "provided": a consuming application
+			supplies this sibling library on its own runtime classpath only if it actually uses the
+			BLE transport - same reasoning as java-bshmidriver's own BSToolbox-BLE dependency.
+			Pinned to a local 0.5.0-SNAPSHOT install for the unified ScanFilter address/name matching
+			API (withAddress/withName/withMatchingAddress/withMatchingName) - install it locally
+			first: `cd ../BSToolbox-BLE && mvn install`. Move to a published release once one ships
+			with that API. -->
+		<dependency>
+			<groupId>cz.bliksoft.java</groupId>
+			<artifactId>common-java-utils-ble</artifactId>
+			<version>${bstoolbox-ble.version}</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- Workaround: the installed 0.5.0-SNAPSHOT's flattened POM drops its own jackson-databind
+			dependency entirely (a flatten-maven-plugin issue in that project, which has unrelated WIP
+			changes as of this writing - not something to fix from here), so BleAdapter throws
+			NoClassDefFoundError at runtime without this. Declared directly, "provided" to match
+			common-java-utils-ble's own scope; version matches that project's pom.xml. Remove once
+			BSToolbox-BLE's published POM correctly carries this transitively again. -->
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+			<version>2.18.2</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- Serial transport for serial-capable printers. "provided": only needed if you use the
+			serial transport. -->
+		<dependency>
+			<groupId>com.fazecast</groupId>
+			<artifactId>jSerialComm</artifactId>
+			<version>${jserialcomm.version}</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- Cli's option parsing/help text only. "provided": only a consumer that runs Cli needs
+			this on the runtime classpath. -->
+		<dependency>
+			<groupId>info.picocli</groupId>
+			<artifactId>picocli</artifactId>
+			<version>${picocli.version}</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- IconSpecEngine (cz.bliksoft.javautils.images.iconspec) for the CLI's "create an image
+			from an iconspec and print it" mode. "provided" and deliberately optional at runtime
+			(checked before use, clear error if missing) - most consumers sending pre-rendered images
+			never need it. -->
+		<dependency>
+			<groupId>cz.bliksoft.java</groupId>
+			<artifactId>common-java-utils</artifactId>
+			<version>${bstoolbox.version}</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<version>${junit.version}</version>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.13.0</version>
+				<configuration>
+					<release>${maven.compiler.release}</release>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>3.2.5</version>
+			</plugin>
+
+			<!-- Main-Class manifest entry for the CLI jar. No Class-Path/addClasspath here: that
+				feature only walks maven-jar-plugin's compile/runtime/system classpath and silently
+				omits provided-scope deps, which jSerialComm/BSToolbox-BLE/picocli all deliberately
+				are. The "dist" profile's launch scripts build the runtime classpath themselves
+				instead (ptlabelprint-cli.jar + lib/*). -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<version>3.4.2</version>
+				<configuration>
+					<archive>
+						<manifest>
+							<mainClass>cz.bliksoft.ptlabelprint.Cli</mainClass>
+						</manifest>
+					</archive>
+				</configuration>
+			</plugin>
+
+			<!-- resolve ${revision} in published POM -->
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>flatten-maven-plugin</artifactId>
+				<version>1.6.0</version>
+				<configuration>
+					<updatePomFile>true</updatePomFile>
+					<flattenMode>resolveCiFriendliesOnly</flattenMode>
+				</configuration>
+				<executions>
+					<execution>
+						<id>flatten</id>
+						<phase>process-resources</phase>
+						<goals>
+							<goal>flatten</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>flatten.clean</id>
+						<phase>clean</phase>
+						<goals>
+							<goal>clean</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>net.revelc.code.formatter</groupId>
+				<artifactId>formatter-maven-plugin</artifactId>
+				<version>2.24.1</version>
+				<configuration>
+					<encoding>UTF-8</encoding>
+					<configFile>src/formatter/EclipseFormatter.xml</configFile>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+
+	<profiles>
+		<profile>
+			<id>release</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-source-plugin</artifactId>
+						<version>3.3.1</version>
+						<executions>
+							<execution>
+								<id>attach-sources</id>
+								<goals>
+									<goal>jar-no-fork</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-javadoc-plugin</artifactId>
+						<version>3.11.2</version>
+						<configuration>
+							<additionalJOptions>
+								<additionalJOption>-Xdoclint:-missing</additionalJOption>
+							</additionalJOptions>
+						</configuration>
+						<executions>
+							<execution>
+								<id>attach-javadocs</id>
+								<goals>
+									<goal>jar</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-gpg-plugin</artifactId>
+						<version>3.2.7</version>
+						<executions>
+							<execution>
+								<id>sign-artifacts</id>
+								<phase>verify</phase>
+								<goals>
+									<goal>sign</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.sonatype.central</groupId>
+						<artifactId>central-publishing-maven-plugin</artifactId>
+						<version>0.7.0</version>
+						<extensions>true</extensions>
+						<configuration>
+							<publishingServerId>central</publishingServerId>
+							<autoPublish>true</autoPublish>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+
+		<!-- Off by default - does not affect `mvn install`/`mvn deploy` or the `release` profile.
+			Build the CLI distribution on request with `mvn package -Pdist`. -->
+		<profile>
+			<id>dist</id>
+			<build>
+				<plugins>
+					<!-- bundle the CLI's provided-scope runtime deps (BSToolbox-BLE, jSerialComm,
+						picocli, and their transitives) into target/dist/lib - excludes
+						common-java-utils: that's only needed for the CLI's iconspec-based print
+						mode, which degrades to a clear error rather than requiring it, so it's kept
+						out of the default CLI distribution. -->
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-dependency-plugin</artifactId>
+						<version>3.6.1</version>
+						<executions>
+							<execution>
+								<id>copy-cli-dist-deps</id>
+								<phase>package</phase>
+								<goals>
+									<goal>copy-dependencies</goal>
+								</goals>
+								<configuration>
+									<includeScope>compile</includeScope>
+									<excludeArtifactIds>common-java-utils</excludeArtifactIds>
+									<outputDirectory>${project.build.directory}/dist/lib</outputDirectory>
+									<excludeTypes>pom</excludeTypes>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+
+					<!-- assemble the distributable dir + zip: ptlabelprint-cli.jar + lib/ +
+						launch scripts -->
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-assembly-plugin</artifactId>
+						<version>3.7.1</version>
+						<executions>
+							<execution>
+								<id>make-cli-dist</id>
+								<phase>package</phase>
+								<goals>
+									<goal>single</goal>
+								</goals>
+								<configuration>
+									<appendAssemblyId>false</appendAssemblyId>
+									<descriptors>
+										<descriptor>src/assembly/cli-dist.xml</descriptor>
+									</descriptors>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+</project>
