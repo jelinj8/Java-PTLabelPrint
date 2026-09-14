@@ -26,6 +26,7 @@ import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterInfo;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterModel;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterModelMeta;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.RfidInfo;
+import cz.bliksoft.ptlabelprint.protocol.niimbot.SoundSettingsItemType;
 import cz.bliksoft.ptlabelprint.protocol.phomemo.DSeriesPrinter;
 import cz.bliksoft.ptlabelprint.protocol.phomemo.RasterImage;
 import cz.bliksoft.ptlabelprint.printer.LabelPrinter;
@@ -50,9 +51,10 @@ import picocli.CommandLine.Parameters;
  */
 @Command(name = "ptlabelprint-cli", mixinStandardHelpOptions = true, version = "ptlabelprint 0.1.0-SNAPSHOT",
 		description = "CLI for Niimbot/Phomemo label printers (BLE, optionally Serial/USB) plus protocol-agnostic BLE diagnostics.",
-		subcommands = {Cli.ScanCommand.class, Cli.InfoCommand.class, Cli.MediaCommand.class, Cli.RawCommand.class,
-				Cli.GattCommand.class, Cli.PhomemoPrintTestCommand.class, Cli.NiimbotPrintTestCommand.class,
-				Cli.DiscoverCommand.class, Cli.ConnectCommand.class})
+		subcommands = {Cli.ScanCommand.class, Cli.InfoCommand.class, Cli.MediaCommand.class,
+				Cli.NiimbotCalibrateCommand.class, Cli.NiimbotSetTimeCommand.class, Cli.NiimbotFirmwareUpgradeCommand.class,
+				Cli.RawCommand.class, Cli.GattCommand.class, Cli.PhomemoPrintTestCommand.class,
+				Cli.NiimbotPrintTestCommand.class, Cli.DiscoverCommand.class, Cli.ConnectCommand.class})
 public class Cli implements Runnable {
 
 	public static void main(String[] args) {
@@ -186,6 +188,162 @@ public class Cli implements Runnable {
 					} catch (Exception e) {
 						System.out.println("Loaded media (ribbon RFID): query failed: " + e);
 					}
+
+					try {
+						boolean bluetoothSound = device.isSoundEnabled(SoundSettingsItemType.BLUETOOTH_CONNECTION_SOUND);
+						boolean powerSound = device.isSoundEnabled(SoundSettingsItemType.POWER_SOUND);
+						System.out.println("Sound: bluetoothConnectionSound=" + bluetoothSound + ", powerSound=" + powerSound);
+					} catch (Exception e) {
+						System.out.println("Sound: query failed: " + e);
+					}
+				} finally {
+					device.disconnect();
+				}
+			}
+			return 0;
+		}
+	}
+
+	@Command(name = "niimbot-calibrate",
+			description = "Run the printer's own label positioning calibration. USES REAL CONSUMABLES (niimbluelib's own note: ejects ~15cm of paper).")
+	static class NiimbotCalibrateCommand implements Callable<Integer> {
+
+		@Parameters(index = "0", description = "BLE address of the printer (see 'scan').")
+		String address;
+
+		@Option(names = {"-t", "--scan-timeout"},
+				description = "How long to scan for the address before connecting, in ms (default: ${DEFAULT-VALUE}).")
+		long scanTimeoutMs = 5000;
+
+		@Option(names = "--value", description = "Calibration value to send (default: ${DEFAULT-VALUE}).")
+		int value = 1;
+
+		@Option(names = {"-v", "--debug"}, description = "Log raw TX/RX packet bytes to stderr.")
+		boolean debug;
+
+		@Override
+		public Integer call() throws Exception {
+			try (BleAdapter adapter = new BleAdapter()) {
+				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
+
+				if (found.isEmpty()) {
+					System.err.println("Device " + address + " not found during scan (run 'scan' first to confirm the address).");
+					return 1;
+				}
+
+				BlePeripheral peripheral = found.get(0).getPeripheral(adapter);
+				NiimbotDevice device = new NiimbotDevice(new BleTransport(peripheral));
+				device.setDebug(debug);
+
+				try {
+					device.connect();
+					boolean ok = device.labelPositioningCalibration(value);
+					System.out.println("Calibration " + (ok ? "accepted" : "refused") + " (value=" + value + ").");
+				} finally {
+					device.disconnect();
+				}
+			}
+			return 0;
+		}
+	}
+
+	@Command(name = "niimbot-set-time", description = "Set the printer's real-time clock.")
+	static class NiimbotSetTimeCommand implements Callable<Integer> {
+
+		@Parameters(index = "0", description = "BLE address of the printer (see 'scan').")
+		String address;
+
+		@Option(names = {"-t", "--scan-timeout"},
+				description = "How long to scan for the address before connecting, in ms (default: ${DEFAULT-VALUE}).")
+		long scanTimeoutMs = 5000;
+
+		@Option(names = {"-v", "--debug"}, description = "Log raw TX/RX packet bytes to stderr.")
+		boolean debug;
+
+		@Override
+		public Integer call() throws Exception {
+			try (BleAdapter adapter = new BleAdapter()) {
+				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
+
+				if (found.isEmpty()) {
+					System.err.println("Device " + address + " not found during scan (run 'scan' first to confirm the address).");
+					return 1;
+				}
+
+				BlePeripheral peripheral = found.get(0).getPeripheral(adapter);
+				NiimbotDevice device = new NiimbotDevice(new BleTransport(peripheral));
+				device.setDebug(debug);
+
+				try {
+					device.connect();
+					java.time.LocalDateTime now = java.time.LocalDateTime.now();
+					device.setPrinterTime(now);
+					System.out.println("Printer time set to " + now + ".");
+				} finally {
+					device.disconnect();
+				}
+			}
+			return 0;
+		}
+	}
+
+	/**
+	 * <b>HIGH RISK - see {@link NiimbotDevice#firmwareUpgrade}'s javadoc.</b> An interrupted or
+	 * corrupt upload, or firmware for the wrong model, can permanently brick the printer - unlike
+	 * wasted consumables, this is not a reversible mistake. This port has never been exercised
+	 * against real hardware; there is no validated firmware file in this project to test with.
+	 * Requires {@code --confirm-firmware-risk} so it can't be triggered by an accidental invocation.
+	 */
+	@Command(name = "niimbot-firmware-upgrade",
+			description = "Upload new firmware to a Niimbot-branded printer. HIGH RISK: can permanently brick the "
+					+ "printer if interrupted, given a corrupt image, or given firmware for the wrong model. This "
+					+ "port has never been tested against real hardware - use entirely at your own risk.")
+	static class NiimbotFirmwareUpgradeCommand implements Callable<Integer> {
+
+		@Parameters(index = "0", description = "BLE address of the printer (see 'scan').")
+		String address;
+
+		@Parameters(index = "1", description = "Path to the firmware image file.")
+		String firmwareFile;
+
+		@Parameters(index = "2", description = "Firmware version string in \"x.x\" form, sent with the upgrade request.")
+		String version;
+
+		@Option(names = "--confirm-firmware-risk", required = true,
+				description = "Required. Confirms you understand this can permanently brick the printer and that this "
+						+ "code has never been tested against real hardware.")
+		boolean confirmed;
+
+		@Option(names = {"-t", "--scan-timeout"},
+				description = "How long to scan for the address before connecting, in ms (default: ${DEFAULT-VALUE}).")
+		long scanTimeoutMs = 5000;
+
+		@Option(names = {"-v", "--debug"}, description = "Log raw TX/RX packet bytes to stderr.")
+		boolean debug;
+
+		@Override
+		public Integer call() throws Exception {
+			byte[] firmwareData = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(firmwareFile));
+			System.out.println("Loaded " + firmwareData.length + " bytes from " + firmwareFile + ".");
+
+			try (BleAdapter adapter = new BleAdapter()) {
+				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
+
+				if (found.isEmpty()) {
+					System.err.println("Device " + address + " not found during scan (run 'scan' first to confirm the address).");
+					return 1;
+				}
+
+				BlePeripheral peripheral = found.get(0).getPeripheral(adapter);
+				NiimbotDevice device = new NiimbotDevice(new BleTransport(peripheral));
+				device.setDebug(debug);
+
+				try {
+					device.connect();
+					System.out.println("Starting firmware upgrade - do not disconnect or power off the printer.");
+					device.firmwareUpgrade(firmwareData, version,
+							chunkIndex -> System.out.println("Sent chunk " + chunkIndex));
+					System.out.println("Firmware upgrade completed.");
 				} finally {
 					device.disconnect();
 				}

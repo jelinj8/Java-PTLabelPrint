@@ -7,8 +7,10 @@ import java.util.List;
 /**
  * A single Niimbot wire frame: {@code [0x55, 0x55, CMD, DATA_LEN, DATA..., XOR_CHECKSUM, 0xAA, 0xAA]}.
  * Ported from niimbluelib's {@code NiimbotPacket} (src/packets/packet.ts). The CRC32-checksummed
- * firmware-upgrade variant ({@code NiimbotCrc32Packet}) is not ported - firmware upgrade is out of
- * scope for this project.
+ * firmware-upgrade variant is {@link NiimbotCrc32Packet} - a standalone class, not a subclass of
+ * this one, since this class's fields/methods aren't designed for subclassing (see that class's own
+ * javadoc for why). See {@link NiimbotDevice#firmwareUpgrade} for the very real risks of actually
+ * using it.
  */
 public class NiimbotPacket {
 

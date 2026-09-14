@@ -1,6 +1,8 @@
 package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -9,6 +11,8 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.IntConsumer;
+import java.util.zip.CRC32;
 
 import cz.bliksoft.ptlabelprint.protocol.Transport;
 
@@ -39,6 +43,12 @@ public class NiimbotDevice {
 	private byte[] packetBuf = new byte[0];
 	private long packetTimeoutMs = DEFAULT_PACKET_TIMEOUT_MS;
 	private volatile boolean debug;
+
+	// --- firmware-upgrade-only state (see #firmwareUpgrade) - a separate raw-data pipeline from
+	// the one above, since the firmware exchange mixes two different packet frame layouts
+	// (NiimbotPacket and NiimbotCrc32Packet) that #onRawData/#dispatch don't know how to parse.
+	private byte[] firmwareBuf = new byte[0];
+	private BlockingQueue<Object> firmwareQueue;
 
 	public NiimbotDevice(Transport transport) {
 		this.transport = transport;
@@ -271,6 +281,27 @@ public class NiimbotDevice {
 		send(PacketGenerator.printerReset());
 	}
 
+	public boolean isSoundEnabled(SoundSettingsItemType soundType) throws IOException, TimeoutException {
+		return PacketParser.parseIsSoundEnabledResponse(send(PacketGenerator.getSoundSettings(soundType)));
+	}
+
+	public void setSoundEnabled(SoundSettingsItemType soundType, boolean on) throws IOException, TimeoutException {
+		send(PacketGenerator.setSoundSettings(soundType, on));
+	}
+
+	/** niimbluelib's own comment: "When 1 or 2 sent to B1, it starts to throw out some paper (~15cm)" - uses real consumables. False returned when refused. */
+	public boolean labelPositioningCalibration(int value) throws IOException, TimeoutException {
+		return PacketParser.parseBooleanResponse(send(PacketGenerator.labelPositioningCalibration(value)));
+	}
+
+	public void setPrinterTime(LocalDateTime time) throws IOException, TimeoutException {
+		send(PacketGenerator.setPrinterTime(time));
+	}
+
+	public void setPrinterTime() throws IOException, TimeoutException {
+		setPrinterTime(LocalDateTime.now());
+	}
+
 	public PrintStatus getPrintStatus() throws IOException, TimeoutException {
 		PrintStatus status = PacketParser.parsePrintStatusResponse(send(PacketGenerator.printStatus()));
 		if (status.getError() != 0) {
@@ -410,6 +441,175 @@ public class NiimbotDevice {
 		} finally {
 			awaitedIds = null;
 			lock.unlock();
+		}
+	}
+
+	/**
+	 * Uploads new firmware. Ported from niimbluelib's {@code NiimbotProtocol.firmwareUpgrade}.
+	 *
+	 * <p>
+	 * <b>HIGH RISK - use entirely at your own risk.</b> An interrupted transfer, a corrupt image,
+	 * or firmware for the wrong model can permanently brick the printer - unlike wasted labels or
+	 * ribbon, this is not a reversible mistake. This port has never been exercised against real
+	 * hardware (there is no validated firmware file available in this project to test with) - its
+	 * correctness rests entirely on matching niimbluelib's source, not on any real upload having
+	 * succeeded. {@link NiimbotCrc32Packet}'s framing is covered by a unit test (encode/decode/
+	 * checksum round-trip), which is the only part of this feature that has actually been verified.
+	 *
+	 * <p>
+	 * Sequence (all fixed by the protocol, not configurable): send {@code StartFirmwareUpgrade},
+	 * wait for the printer to push {@code IN_REQUEST_FIRMWARE_CRC}, send the whole image's CRC32,
+	 * then repeatedly wait for the printer to push {@code IN_REQUEST_FIRMWARE_CHUNK} (naming which
+	 * 200-byte chunk it wants next) until it has requested past the end of the data, send
+	 * {@code FirmwareNoMoreChunks}, wait for {@code IN_FIRMWARE_CHECK_RESULT} (CRC verified), send
+	 * {@code FirmwareCommit}, wait for {@code IN_FIRMWARE_RESULT} (flash written). Any unexpected
+	 * response, timeout, or a negative check/commit result aborts with an exception - the caller
+	 * must not assume the printer is left in a good state either way.
+	 *
+	 * @param firmwareData the whole firmware image, verbatim
+	 * @param version      {@code "x.x"} version string sent with the upgrade request
+	 * @param onChunkProgress called with each chunk index as it's sent, or {@code null} to ignore
+	 */
+	public void firmwareUpgrade(byte[] firmwareData, String version, IntConsumer onChunkProgress) throws IOException, TimeoutException {
+		final int chunkSize = 200;
+
+		lock.lock();
+		try {
+			firmwareBuf = new byte[0];
+			firmwareQueue = new ArrayBlockingQueue<>(1);
+			transport.setRawDataListener(this::onFirmwareRawData);
+
+			try {
+				writeFirmware(PacketGenerator.startFirmwareUpgrade(version).toBytes());
+				waitFirmware(ResponseCommandId.IN_START_FIRMWARE_UPGRADE, 5000);
+				waitFirmware(ResponseCommandId.IN_REQUEST_FIRMWARE_CRC, 5000);
+
+				CRC32 crc = new CRC32();
+				crc.update(firmwareData);
+				writeFirmware(PacketGenerator.sendFirmwareChecksum(crc.getValue()).toBytes());
+
+				while (true) {
+					Object response = pollFirmware(5000, "firmware chunk request");
+
+					if (response instanceof NiimbotPacket
+							&& ((NiimbotPacket) response).getCommand() == ResponseCommandId.IN_FIRMWARE_RESULT.getCode()) {
+						throw new NiimbotProtocolException("Unexpected firmware result received while awaiting a chunk request");
+					}
+					if (!(response instanceof NiimbotCrc32Packet)) {
+						throw new NiimbotProtocolException("Expected a firmware chunk-request packet");
+					}
+
+					int chunkNumber = ((NiimbotCrc32Packet) response).getChunkNumber();
+					if ((long) chunkNumber * chunkSize >= firmwareData.length) {
+						break;
+					}
+
+					int end = Math.min(chunkNumber * chunkSize + chunkSize, firmwareData.length);
+					byte[] chunk = Arrays.copyOfRange(firmwareData, chunkNumber * chunkSize, end);
+					writeFirmware(PacketGenerator.sendFirmwareChunk(chunkNumber, chunk).toBytes());
+
+					if (onChunkProgress != null) {
+						onChunkProgress.accept(chunkNumber);
+					}
+				}
+
+				writeFirmware(PacketGenerator.firmwareNoMoreChunks().toBytes());
+				NiimbotPacket checkResult = (NiimbotPacket) waitFirmware(ResponseCommandId.IN_FIRMWARE_CHECK_RESULT, 5000);
+				if (!PacketParser.parseBooleanResponse(checkResult)) {
+					throw new NiimbotProtocolException("Firmware check failed (CRC mismatch) - do not power-cycle the printer, its state is undefined");
+				}
+
+				writeFirmware(PacketGenerator.firmwareCommit().toBytes());
+				NiimbotPacket firmwareResult = (NiimbotPacket) waitFirmware(ResponseCommandId.IN_FIRMWARE_RESULT, 5000);
+				if (!PacketParser.parseBooleanResponse(firmwareResult)) {
+					throw new NiimbotProtocolException("Firmware upgrade failed - do not power-cycle the printer, its state is undefined");
+				}
+			} finally {
+				transport.setRawDataListener(this::onRawData);
+			}
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	private void writeFirmware(byte[] bytes) throws IOException {
+		if (debug) {
+			System.err.println("TX (firmware) " + toHex(bytes));
+		}
+		transport.write(bytes);
+	}
+
+	/** Waits for a specific expected response command, discarding nothing else in between (firmware upload has exactly one thing in flight at a time). */
+	private Object waitFirmware(ResponseCommandId expected, long timeoutMs) throws IOException, TimeoutException {
+		Object response = pollFirmware(timeoutMs, expected.toString());
+		int cmd = response instanceof NiimbotPacket ? ((NiimbotPacket) response).getCommand()
+				: ((NiimbotCrc32Packet) response).getCommand();
+		if (cmd != expected.getCode()) {
+			throw new NiimbotProtocolException("Expected " + expected + " but got command 0x" + Integer.toHexString(cmd));
+		}
+		return response;
+	}
+
+	private Object pollFirmware(long timeoutMs, String waitingFor) throws IOException, TimeoutException {
+		Object response;
+		try {
+			response = firmwareQueue.poll(timeoutMs, TimeUnit.MILLISECONDS);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for " + waitingFor, e);
+		}
+		if (response == null) {
+			throw new TimeoutException("Timeout waiting for " + waitingFor);
+		}
+		return response;
+	}
+
+	/**
+	 * Raw-data listener installed only for the duration of {@link #firmwareUpgrade}. Unlike
+	 * {@link #onRawData}, this buffer can contain either frame layout - the command byte (always at
+	 * offset 2, common to both {@link NiimbotPacket} and {@link NiimbotCrc32Packet}) decides which
+	 * one applies before the frame length (and so the data-length byte's offset) can be known:
+	 * {@code IN_REQUEST_FIRMWARE_CHUNK} is the only response niimbluelib itself parses as
+	 * CRC32-framed; everything else in this exchange is a normal frame.
+	 */
+	private void onFirmwareRawData(byte[] data) {
+		if (data.length == 0) {
+			return;
+		}
+		if (debug) {
+			System.err.println("RX raw (firmware) " + toHex(data));
+		}
+
+		byte[] combined = new byte[firmwareBuf.length + data.length];
+		System.arraycopy(firmwareBuf, 0, combined, 0, firmwareBuf.length);
+		System.arraycopy(data, 0, combined, firmwareBuf.length, data.length);
+		firmwareBuf = combined;
+
+		while (true) {
+			if (firmwareBuf.length < 3 || !NiimbotPacket.hasSubarrayAtPos(firmwareBuf, NiimbotPacket.HEAD, 0)) {
+				return;
+			}
+
+			int cmd = firmwareBuf[2] & 0xff;
+			boolean crc32Framed = cmd == ResponseCommandId.IN_REQUEST_FIRMWARE_CHUNK.getCode();
+			int dataLenOffset = crc32Framed ? 5 : 3;
+			if (firmwareBuf.length <= dataLenOffset) {
+				return;
+			}
+
+			int dataLen = firmwareBuf[dataLenOffset] & 0xff;
+			int frameLen = crc32Framed
+					? NiimbotPacket.HEAD.length + 1 + 2 + 1 + dataLen + 4 + NiimbotPacket.TAIL.length
+					: NiimbotPacket.HEAD.length + 1 + 1 + dataLen + 1 + NiimbotPacket.TAIL.length;
+			if (firmwareBuf.length < frameLen) {
+				return;
+			}
+
+			byte[] frameBytes = Arrays.copyOfRange(firmwareBuf, 0, frameLen);
+			firmwareBuf = Arrays.copyOfRange(firmwareBuf, frameLen, firmwareBuf.length);
+
+			Object parsed = crc32Framed ? NiimbotCrc32Packet.fromBytes(frameBytes) : NiimbotPacket.fromBytes(frameBytes);
+			firmwareQueue.offer(parsed);
 		}
 	}
 

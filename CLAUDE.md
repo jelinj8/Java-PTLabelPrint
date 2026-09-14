@@ -25,6 +25,31 @@ in it at all, matching niimbluelib itself, which has no dedicated print task for
 project doesn't invent one. `Cli`'s `niimbot-print-test` dispatches through
 `NiimbotPrintTasks.findPrintTask` rather than a hardcoded per-model branch. All of this is built on
 the shared `BleTransport`.
+
+Beyond the print flow, `NiimbotDevice` now covers every method niimbluelib's own `NiimbotProtocol`
+class wraps as a convenience API (not every raw command ID - see `PacketGenerator`'s own javadoc for
+that distinction): `isSoundEnabled`/`setSoundEnabled` (`ptlabelprint-cli media` prints both),
+`labelPositioningCalibration` (`ptlabelprint-cli niimbot-calibrate` - **uses real consumables**,
+niimbluelib's own note: ejects ~15cm of paper), `setPrinterTime` (`ptlabelprint-cli
+niimbot-set-time`), and `firmwareUpgrade` (`ptlabelprint-cli niimbot-firmware-upgrade`, requires
+`--confirm-firmware-risk`). `D110V4PrintTask`/`PrintOptions` also gained the tube-type/width and
+half-cut fields niimbluelib's own `D110MV4PrintTask.ts` conditionally sends - a `PrintOptions`-only
+capability with no CLI exposure, since neither D11_H nor M2_H supports shrink-tube labels to test it
+against.
+
+**Firmware upgrade is a deliberate exception to "confirmed on real hardware" everywhere else in
+this file**: it needed a genuinely different packet frame (`NiimbotCrc32Packet` - 2-byte chunk
+number, 4-byte CRC32 checksum, standalone class, not a subclass of `NiimbotPacket`) and a dual-format
+raw-data listener (`NiimbotDevice#onFirmwareRawData`, swapped in only for the duration of the call)
+since the exchange mixes normal- and CRC32-framed responses. **It has never been run against real
+hardware and there is no validated firmware file in this project to test with** - correctness rests
+on matching niimbluelib's source, not on any real upload having succeeded; the one part that
+*is* verified is `NiimbotCrc32Packet`'s frame encode/decode/checksum round-trip
+(`NiimbotCrc32PacketTest`). A prior version of this file documented firmware upgrade as deliberately
+out of scope - the user explicitly asked to include it anyway, accepting the brick risk; the CLI
+command's required `--confirm-firmware-risk` flag is this project's only guardrail against
+triggering it by accident.
+
 **Confirmed against a real Niimbot D11_H**:
 - `ptlabelprint-cli info <address>`: connect handshake (protocol v5), model ID (528, correctly
   resolved to `D11_H` via `PrinterModels`), serial number (matched the device's own advertised
@@ -75,12 +100,13 @@ the shared `BleTransport`.
 
 `PrinterCatalog`'s `M2_H` entry is now marked `isConfirmedOnHardware() == true` to match.
 
-`Cli` wires the family up with `scan`/`info`/`media`/`gatt`/`raw`/`niimbot-print-test` subcommands.
-**Not implemented yet**: Serial transport, firmware upgrade, and a real image pipeline
-(`niimbot-print-test` hand-builds a `PixelSource`, no dithering/scaling from an arbitrary source
-image). See each print-task class's javadoc for exactly which niimbluelib methods it ports vs.
-omits - only `D110V4PrintTask` (D11_H) and `B1PrintTask` (M2_H) are hardware-confirmed; the other 5
-are ported from niimbluelib's source but untested against real hardware.
+`Cli` wires the family up with `scan`/`info`/`media`/`niimbot-calibrate`/`niimbot-set-time`/
+`niimbot-firmware-upgrade`/`gatt`/`raw`/`niimbot-print-test` subcommands. **Not implemented yet**:
+Serial transport, and a real image pipeline (`niimbot-print-test` hand-builds a `PixelSource`, no
+dithering/scaling from an arbitrary source image). See each print-task class's javadoc for exactly
+which niimbluelib methods it ports vs. omits - only `D110V4PrintTask` (D11_H) and `B1PrintTask`
+(M2_H) are hardware-confirmed; the other 5 are ported from niimbluelib's source but untested against
+real hardware.
 
 `cz.bliksoft.ptlabelprint.protocol.phomemo` (`RasterImage`, `DSeriesCommands`, `DSeriesPrinter`)
 ports phomymo's `d-series` protocol and **has successfully printed on a real Phomemo Q30** via
@@ -244,7 +270,13 @@ Manual real-hardware check, once built (`mvn package -Pdist`, then from `target/
                                             # gatt/raw below, or an unfiltered scan, for non-Niimbot devices)
 ./ptlabelprint-cli.sh info <BLE address>   # connect and print PrinterInfo (Niimbot protocol only)
 ./ptlabelprint-cli.sh media <BLE address>  # connect and print live state (heartbeat) + loaded-roll
-                                            # RFID info (Niimbot protocol only)
+                                            # RFID info + sound settings (Niimbot protocol only)
+./ptlabelprint-cli.sh niimbot-calibrate <address>   # label positioning calibration - USES REAL
+                                            # CONSUMABLES (ejects ~15cm of paper)
+./ptlabelprint-cli.sh niimbot-set-time <address>    # set the printer's real-time clock
+./ptlabelprint-cli.sh niimbot-firmware-upgrade <address> <file> <version> --confirm-firmware-risk
+                                            # HIGH RISK - can permanently brick the printer; never
+                                            # tested against real hardware, see "Status"
 ./ptlabelprint-cli.sh gatt <BLE address>   # protocol-agnostic: dump GATT services/characteristics
 ./ptlabelprint-cli.sh raw <address> <hex>  # protocol-agnostic: write raw hex, print whatever comes back
                                             # (--service/--write-char/--notify-char/--with-response/--read

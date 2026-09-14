@@ -2,7 +2,6 @@ package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 
@@ -35,13 +34,31 @@ public class D110V4PrintTask extends AbstractNiimbotPrintTask {
 		return pageColor == PageColorType.SINGLE_COLOR || pageColor == PageColorType.DOUBLE_COLOR;
 	}
 
-	/** Sets label type, density, and sends the print-start command. */
+	/**
+	 * Sets label type, density, optionally tube type/width and half-cut, and sends the print-start
+	 * command. Ported from niimbluelib's own {@code printInit}, including its validation that tube
+	 * parameters require {@link LabelType#CONTINUOUS}.
+	 */
 	@Override
 	public void printInit() throws IOException, TimeoutException {
-		device.sendAllRaw(Arrays.asList(
-				PacketGenerator.setLabelType(options.getLabelType().getCode()),
-				PacketGenerator.setDensity(options.getDensity()),
-				PacketGenerator.printStart9b(options.getTotalPages(), options.getPageColor(), options.getSpeed(), false)));
+		if ((options.getTubeType() != null || options.getTubeWidthMm() != null) && options.getLabelType() != LabelType.CONTINUOUS) {
+			throw new IllegalStateException("When using tube parameters, labelType must be set to CONTINUOUS");
+		}
+
+		List<NiimbotPacket> pkts = new ArrayList<>();
+		pkts.add(PacketGenerator.setLabelType(options.getLabelType().getCode()));
+		pkts.add(PacketGenerator.setDensity(options.getDensity()));
+
+		if (options.getTubeType() != null && options.getTubeWidthMm() != null) {
+			pkts.add(PacketGenerator.setTubeTypeAndWidth(options.getTubeType(), options.getTubeWidthMm()));
+		}
+		if (options.getHalfCut() != null) {
+			pkts.add(PacketGenerator.setHalfCut(options.getHalfCut()));
+		}
+
+		pkts.add(PacketGenerator.printStart9b(options.getTotalPages(), options.getPageColor(), options.getSpeed(), false));
+
+		device.sendAllRaw(pkts);
 	}
 
 	/**
