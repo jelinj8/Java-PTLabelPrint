@@ -102,11 +102,12 @@ triggering it by accident.
 
 `Cli` wires the family up with `scan`/`info`/`media`/`niimbot-calibrate`/`niimbot-set-time`/
 `niimbot-firmware-upgrade`/`gatt`/`raw`/`niimbot-print-test` subcommands. **Not implemented yet**:
-Serial transport, and a real image pipeline (`niimbot-print-test` hand-builds a `PixelSource`, no
-dithering/scaling from an arbitrary source image). See each print-task class's javadoc for exactly
-which niimbluelib methods it ports vs. omits - only `D110V4PrintTask` (D11_H) and `B1PrintTask`
-(M2_H) are hardware-confirmed; the other 5 are ported from niimbluelib's source but untested against
-real hardware.
+Serial transport. A real (if basic - fixed-threshold, no dithering) image pipeline now exists via
+`.printer`'s `LabelPrinter#print(BufferedImage, PrintJob)` (see below); `niimbot-print-test` itself
+still hand-builds a `PixelSource` directly and hasn't been refactored to delegate to it (deliberately
+- see below). See each print-task class's javadoc for exactly which niimbluelib methods it ports vs.
+omits - only `D110V4PrintTask` (D11_H) and `B1PrintTask` (M2_H) are hardware-confirmed; the other 5
+are ported from niimbluelib's source but untested against real hardware.
 
 `cz.bliksoft.ptlabelprint.protocol.phomemo` (`RasterImage`, `DSeriesCommands`, `DSeriesPrinter`)
 ports phomymo's `d-series` protocol and **has successfully printed on a real Phomemo Q30** via
@@ -134,23 +135,26 @@ phomymo's non-d-series `printers.json` rows verbatim (protocol tag, width, dpi, 
 rotation, tape), and `PrinterFamily`/`PrinterCatalog` know about them (see below) - but no
 command-builder/print-flow code exists for any of the 6 yet, so a detected device from one of them
 can't actually print (`PrinterFactory` throws `UnimplementedPrinterFamilyException`, not silently
-misdispatching or defaulting). Still missing everywhere in `phomemo`, `d-series` included: a real
-image pipeline (dithering/scaling into a `RasterImage` from an arbitrary source image) - the test
-command hand-builds a trivial raster.
+misdispatching or defaulting). `d-series` now has a real (fixed-threshold, no dithering) image
+pipeline from an arbitrary `BufferedImage` via `.printer`'s `LabelPrinter#print` (see below) -
+`RasterImage.fromPixelSource` packs a `PixelSource` into this class's existing MSB-first format;
+`phomemo-print-test` itself still hand-builds a trivial raster directly, not refactored to delegate
+(deliberately - see below).
 
 `cz.bliksoft.ptlabelprint.printer` - the printer abstraction layer - is now implemented, once there
 were two real protocol families to actually generalize across: `PrinterCatalog` (BLE-advertised-
 name → `PrinterDefinition`, longest-prefix-wins, mirroring phomymo's own `detectPrinterConfig`) and
-`LabelPrinter` (a *connection-lifecycle-only* common interface - see `LabelPrinter`'s own javadoc
-for why printing itself isn't unified - Phomemo's `d-series` has no info-query capability at all,
-unlike Niimbot's rich `PrinterInfoType` catalog, and forcing one print signature across genuinely
-different image models would lose real capability). Beneath that interface, a real (not
+`LabelPrinter` (connection lifecycle, plus a real, deliberately minimal common print entry point -
+`print(BufferedImage, PrintJob)`/`getCapabilities()`, see "Unified image-print abstraction" below -
+see `LabelPrinter`'s own javadoc for exactly what that surface covers vs. what still needs
+`getDevice()`/`instanceof`-casting to each family's real API, e.g. Phomemo's `d-series` still has no
+info-query capability at all, unlike Niimbot's rich `PrinterInfoType` catalog). Beneath that interface, a real (not
 speculative) class hierarchy: `AbstractLabelPrinter` (cross-family - just the `PrinterDefinition`
 field/family-validation pattern, since `connect`/`close`/`isConnected` delegate to genuinely
 different underlying objects per family and aren't shareable further at that level) and
-`PhomemoLabelPrinter` (Phomemo-specific - the `BlePeripheral`→`BleTransport` construction step plus
-concrete `connect`/`close`/`isConnected` bodies, since every Phomemo sub-protocol, implemented or
-merely cataloged, shares the same transport shape). `NiimbotLabelPrinter` extends
+`PhomemoLabelPrinter` (Phomemo-specific - stores the caller-supplied `Transport` plus concrete
+`connect`/`close`/`isConnected` bodies, since every Phomemo sub-protocol, implemented or merely
+cataloged, shares the same transport shape). `NiimbotLabelPrinter` extends
 `AbstractLabelPrinter` directly (exposes each family's real, different print API after connecting -
 `getDevice()`/`getPrinterInfo()`); `PhomemoDSeriesLabelPrinter` extends `PhomemoLabelPrinter`
 (exposes `print(...)`) - the only concrete `PhomemoLabelPrinter` subclass today, but the class is
@@ -172,6 +176,56 @@ which of those are actually hardware-tested (only D11_H, M2_H, and Q30 so far) v
 ported-and-untested, and `PrinterFamily`'s own javadoc for the 6 Phomemo sub-protocol families that
 are cataloged but have no `LabelPrinter` implementation at all (`PrinterFactory` throws
 `UnimplementedPrinterFamilyException` for those, distinct from "not recognized").
+
+**Unified image-print abstraction** (`LabelPrinter#print(BufferedImage, PrintJob)`): takes a
+standard `java.awt.image.BufferedImage` - no manufacturer-specific type (`PixelSource`/
+`RasterImage`/`EncodedImage`) appears on this common surface; each family converts internally.
+`.image` now has real content (previously just a package-info): `PixelSource` (moved here from
+`.protocol.niimbot`, the shared width/height/`isBlack`/`isRed` pixel abstraction),
+`BufferedImagePixelSource` (wraps a `BufferedImage`, fixed-threshold 128/255 luminance B/W
+conversion - dithering is a documented future improvement, not attempted), `CanvasResize`
+(center-anchored pad/crop to an exact target height - **not** a scale, since Phomemo `d-series`
+needs an exact printhead-width match or it garbles the print, confirmed the hard way earlier this
+session), `ImageRotation` (lazy 90°CW rotation, composable to any multiple of 90°), and
+`PrinterCapabilities` (dpi/printheadPixels/densityMin/densityMax, returned by
+`LabelPrinter#getCapabilities()`). `.printer` gained `PrintJob` (copies/continuousMedia/density/
+`Rotation`, builder-style) and `RotationResolver`, which implements the exact rotation algorithm the
+user specified: each family/model's own **mandatory** orientation is always applied first (Phomemo
+`d-series`: unconditional 90°CW, unchanged, still inside `DSeriesPrinter.print`; Niimbot: 90°CW iff
+the connected model's `PrinterModelMeta.getPrintDirection() == PrintDirection.LEFT`, newly
+implemented here - see below for why this is a real behavior change for D11_H specifically) - then
+`Rotation.NONE` uses that as final regardless of fit, an explicit `CW_90`/`CW_180`/`CW_270`
+pre-rotates the *original* source by that much before the mandatory step (an authoritative override,
+skips auto-fit), and the default `Rotation.AUTO` tries the mandatory-only result first and, only if
+it doesn't fit the printhead axis, tries exactly one additional 90°CW pre-rotation before falling
+back to cropping (`RotationResolverTest` verifies this math directly, including the not-yet-applied-
+mandatory-rotation-aware fit check). Phomemo also gained `DSeriesPrinterModel`/
+`DSeriesPrinterModelMeta`/`DSeriesPrinterModels` (a per-model dpi/printheadPixels/density-range
+table for `d-series` - all 5 entries identical, 203dpi/96px/1-8, since only the Q30's values are
+actually confirmed and phomymo's own `printers.json` doesn't differentiate the family further - this
+uniformity is a documented assumption, not a verified fact for D30/D35/D50/Q30S) and
+`RasterImage.fromPixelSource` (packs a `PixelSource` into the class's existing MSB-first raster
+format). `NiimbotLabelPrinter`/`PhomemoLabelPrinter`/`PhomemoDSeriesLabelPrinter`/`PrinterFactory`
+now all construct from a `Transport`, not a `BlePeripheral` - what makes "regardless of connection
+method" real today (a caller builds the `Transport` from whichever `BlePeripheral` they have, local-
+or, once BSToolbox-BLE ships its currently-uncommitted local/remote `BleAdapter` split, remote-
+backed - `BlePeripheral`'s own public shape is unchanged by that work, confirmed by reading the
+sibling repo's in-progress diff, so `BleTransport` needs no change at all) and what a future
+`SerialTransport` plugs into unchanged. New CLI command `print-test` (manufacturer-agnostic: detect
+via `PrinterCatalog`, connect via `PrinterFactory`, print `getCapabilities()`, then one
+`print(BufferedImage, PrintJob)` call against either an `--image` file or a synthetic default test
+square) exercises the whole thing end to end; `niimbot-print-test`/`phomemo-print-test` are
+deliberately left as-is (family-specific options this minimal common surface doesn't expose), not
+refactored to delegate to the new path.
+
+**D11_H needs a real hardware re-verification, not just code review, next time it's available**:
+implementing `PrintDirection`-aware rotation is a genuine behavior change to an already-hardware-
+confirmed path - niimbluelib rotates 90°CW whenever `PrintDirection == LEFT` (D11_H's value; M2_H's
+is `TOP`, needing no rotation, unchanged), which this project's own `NiimbotImageEncoder` never
+implemented before now. The earlier "confirmed working" D11_H print used a solid rectangle, which
+can't reveal a 90°-orientation bug - so this was a real latent gap the existing test couldn't have
+caught, not a regression risk introduced by this change. Use an **asymmetric** test pattern (e.g. an
+"L"/"F" shape, or a rectangle with one corner marked) for the re-check, not another solid one.
 
 **Neither family's real device advertises the service UUID `BleTransport.scanFilter()`/the CLI's
 `scan` command filters on** - confirmed for both the Phomemo Q30 and a genuine Niimbot D11_H (found
@@ -302,6 +356,14 @@ Manual real-hardware check, once built (`mvn package -Pdist`, then from `target/
                                             # only; confirmed working on a real Q30, see "Status").
                                             # --label picks any of DSeriesLabelSizes' mm presets
                                             # (default 12x12, the hardware-confirmed size)
+./ptlabelprint-cli.sh discover             # unfiltered scan + PrinterCatalog family guess (any family)
+./ptlabelprint-cli.sh connect <address>    # auto-detect + connect through the .printer abstraction layer
+./ptlabelprint-cli.sh print-test <address> [--image=<file>] [--copies] [--continuous] [--density]
+                                            # [--rotation=auto|none|90|180|270]
+                                            # USES REAL CONSUMABLES - manufacturer-agnostic
+                                            # LabelPrinter#print(BufferedImage, PrintJob), any
+                                            # detected family; default image is a synthetic solid
+                                            # square sized to the connected printer's printhead
 ```
 
 ## What this is
@@ -507,11 +569,14 @@ manufacturer/protocol-family split described above:
   6 cataloged-but-unimplemented Phomemo families), `LabelPrinter`/`AbstractLabelPrinter`/
   `NiimbotLabelPrinter`/`PhomemoLabelPrinter`/`PhomemoDSeriesLabelPrinter`/`PrinterFactory`/
   `UnimplementedPrinterFamilyException` (unified connect lifecycle + per-family dispatch, with a
-  real (not speculative) shared-implementation hierarchy beneath `LabelPrinter` - see `LabelPrinter`'s
-  own javadoc for why printing itself stays family-specific, and `PhomemoLabelPrinter`'s for why it
-  exists despite having one concrete subclass today). `.image` (image staging/encoding, optional
-  IconSpecEngine bridge) is still just a package-info - not worth building without a real image
-  pipeline yet.
+  real (not speculative) shared-implementation hierarchy beneath `LabelPrinter`, plus `PrintJob`/
+  `Rotation`/`RotationResolver` for the common `print(BufferedImage, PrintJob)` entry point - see
+  `LabelPrinter`'s own javadoc for exactly what that surface covers vs. what stays family-specific,
+  and `PhomemoLabelPrinter`'s for why it exists despite having one concrete subclass today). `.image`
+  now has real content (see "Unified image-print abstraction" above): `PixelSource` (moved here from
+  `.protocol.niimbot`), `BufferedImagePixelSource`, `CanvasResize`, `ImageRotation`,
+  `PrinterCapabilities`. An IconSpecEngine bridge still isn't built - not worth it without a caller
+  that needs icon-spec-based printing yet.
   `cz.bliksoft.ptlabelprint.Cli` (top level) and `.printer` are the only other packages with real
   code. Don't create `.protocol.zebra`/`.protocol.brother` package stubs before there's real work
   to put in them - the "Protocol families" section above documents intent, not required
@@ -525,14 +590,15 @@ manufacturer/protocol-family split described above:
   narrowly to Phomemo's already-fully-documented sub-protocols above; it is not a general license to
   add family constants speculatively (zebra/brother still get none).
 - **CLI**: `scan`/`info`/`gatt`/`raw` (Niimbot-focused, plus protocol-agnostic BLE diagnostics),
-  `niimbot-print-test`/`phomemo-print-test` (exercise each family's print flow end to end - see
-  "Build / test commands" above), and `discover`/`connect` (go through the `.printer` abstraction
-  layer instead - manufacturer-agnostic scan + auto-detect + unified connect) are all implemented.
-  Further configure/send-image/iconspec-print commands land here once there's a real image pipeline
-  to drive them - similar shape to `java-bshmidriver`'s `Cli`/`HmiUtils` (one transport-connect
-  helper per transport, so using BLE-only never forces Serial's dependency onto the classpath, and
-  vice versa) is still the intended pattern once a Serial
-  transport exists.
+  `niimbot-print-test`/`phomemo-print-test` (exercise each family's own real print flow end to end -
+  see "Build / test commands" above), `discover`/`connect` (go through the `.printer` abstraction
+  layer - manufacturer-agnostic scan + auto-detect + unified connect), and `print-test`
+  (manufacturer-agnostic image print through `LabelPrinter#print(BufferedImage, PrintJob)` - see
+  "Unified image-print abstraction" above) are all implemented. A dedicated iconspec-print command
+  still isn't built - land it here once a caller actually needs icon-spec-based printing - similar
+  shape to `java-bshmidriver`'s `Cli`/`HmiUtils` (one transport-connect helper per transport, so
+  using BLE-only never forces Serial's dependency onto the classpath, and vice versa) is still the
+  intended pattern once a Serial transport exists.
 
 ## BSToolbox-BLE API surface (what the BLE transport will be built on)
 

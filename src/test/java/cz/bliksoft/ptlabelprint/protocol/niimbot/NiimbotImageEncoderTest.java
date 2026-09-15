@@ -7,6 +7,8 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import cz.bliksoft.ptlabelprint.image.PixelSource;
+
 class NiimbotImageEncoderTest {
 
 	@Test

@@ -1,5 +1,7 @@
 package cz.bliksoft.ptlabelprint.protocol.phomemo;
 
+import cz.bliksoft.ptlabelprint.image.PixelSource;
+
 /**
  * A 1bpp raster image: {@code widthBytes} bytes per row (MSB-first, bit=1 means "print/black"),
  * {@code heightLines} rows, top-to-bottom, {@code data.length == widthBytes * heightLines}.
@@ -20,6 +22,26 @@ public class RasterImage {
 		this.data = data;
 		this.widthBytes = widthBytes;
 		this.heightLines = heightLines;
+	}
+
+	/** Packs {@code source.isBlack(x, y)} into this class's own MSB-first, byte-per-row format. */
+	public static RasterImage fromPixelSource(PixelSource source) {
+		int widthPx = source.getWidth();
+		int heightLines = source.getHeight();
+		int widthBytes = (widthPx + 7) / 8;
+		byte[] data = new byte[widthBytes * heightLines];
+
+		for (int y = 0; y < heightLines; y++) {
+			for (int x = 0; x < widthPx; x++) {
+				if (source.isBlack(x, y)) {
+					int byteIdx = y * widthBytes + (x / 8);
+					int bitIdx = 7 - (x % 8);
+					data[byteIdx] |= (byte) (1 << bitIdx);
+				}
+			}
+		}
+
+		return new RasterImage(data, widthBytes, heightLines);
 	}
 
 	public byte[] getData() {

@@ -1,9 +1,15 @@
 package cz.bliksoft.ptlabelprint;
 
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.File;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
+
+import javax.imageio.ImageIO;
 
 import cz.bliksoft.javautils.ble.BleAdapter;
 import cz.bliksoft.javautils.ble.BleCharacteristic;
@@ -11,6 +17,10 @@ import cz.bliksoft.javautils.ble.BlePeripheral;
 import cz.bliksoft.javautils.ble.BleService;
 import cz.bliksoft.javautils.ble.ScanFilter;
 import cz.bliksoft.javautils.ble.utils.BleUtils;
+import cz.bliksoft.ptlabelprint.image.PixelSource;
+import cz.bliksoft.ptlabelprint.image.PrinterCapabilities;
+import cz.bliksoft.ptlabelprint.printer.PrintJob;
+import cz.bliksoft.ptlabelprint.printer.Rotation;
 import cz.bliksoft.ptlabelprint.protocol.BleTransport;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.AbstractNiimbotPrintTask;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.B1PrintTask;
@@ -22,7 +32,6 @@ import cz.bliksoft.ptlabelprint.protocol.niimbot.NiimbotDevice;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.NiimbotImageEncoder;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.NiimbotPrintTasks;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PageColorType;
-import cz.bliksoft.ptlabelprint.protocol.niimbot.PixelSource;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PrintOptions;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterInfo;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterModel;
@@ -57,7 +66,8 @@ import picocli.CommandLine.Parameters;
 		subcommands = {Cli.ScanCommand.class, Cli.InfoCommand.class, Cli.MediaCommand.class,
 				Cli.NiimbotCalibrateCommand.class, Cli.NiimbotSetTimeCommand.class, Cli.NiimbotFirmwareUpgradeCommand.class,
 				Cli.RawCommand.class, Cli.GattCommand.class, Cli.PhomemoPrintTestCommand.class,
-				Cli.NiimbotPrintTestCommand.class, Cli.DiscoverCommand.class, Cli.ConnectCommand.class})
+				Cli.NiimbotPrintTestCommand.class, Cli.DiscoverCommand.class, Cli.ConnectCommand.class,
+				Cli.PrintTestCommand.class})
 public class Cli implements Runnable {
 
 	public static void main(String[] args) {
@@ -804,7 +814,7 @@ public class Cli implements Runnable {
 
 				LabelPrinter printer;
 				try {
-					printer = PrinterFactory.create(definition, result.getPeripheral(adapter));
+					printer = PrinterFactory.create(definition, new BleTransport(result.getPeripheral(adapter)));
 				} catch (UnimplementedPrinterFamilyException e) {
 					System.err.println("Detected as " + definition + ", but that family isn't implemented yet"
 							+ " (cataloged, not printable) - see CLAUDE.md's \"Protocol families\" section.");
@@ -823,6 +833,145 @@ public class Cli implements Runnable {
 				}
 			}
 			return 0;
+		}
+	}
+
+	/**
+	 * Exercises the manufacturer-agnostic {@link LabelPrinter#print(BufferedImage, PrintJob)}
+	 * surface end to end, regardless of which family {@code --address} turns out to be: detect via
+	 * {@link PrinterCatalog}, connect via {@link PrinterFactory}, print {@link PrinterCapabilities},
+	 * then one {@code print(BufferedImage, PrintJob)} call. {@code niimbot-print-test}/
+	 * {@code phomemo-print-test} stay as they are for family-specific options this common surface
+	 * doesn't expose - see this class's own javadoc. Uses real consumables.
+	 */
+	@Command(name = "print-test",
+			description = "Print a BufferedImage through the unified LabelPrinter.print(BufferedImage, PrintJob) abstraction, regardless of printer family. Uses real consumables.")
+	static class PrintTestCommand implements Callable<Integer> {
+
+		@Parameters(index = "0", description = "BLE address of the printer (see 'discover').")
+		String address;
+
+		@Option(names = {"-t", "--scan-timeout"},
+				description = "How long to scan for the address before connecting, in ms (default: ${DEFAULT-VALUE}).")
+		long scanTimeoutMs = 5000;
+
+		@Option(names = {"-c", "--copies"}, description = "Number of copies (default: ${DEFAULT-VALUE}).")
+		int copies = 1;
+
+		@Option(names = "--continuous", description = "Continuous tape instead of gapped/die-cut labels.")
+		boolean continuous;
+
+		@Option(names = {"-d", "--density"},
+				description = "Print density, family-native scale and range (default: family's own default).")
+		Integer density;
+
+		@Option(names = {"-r", "--rotation"},
+				description = "auto (default), none, 90, 180, 270 - see LabelPrinter's own javadoc for the algorithm.")
+		String rotation = "auto";
+
+		@Option(names = {"-i", "--image"},
+				description = "Image file to print (any format ImageIO can read). Default: a synthetic solid-square test pattern.")
+		File image;
+
+		@Override
+		public Integer call() throws Exception {
+			Rotation parsedRotation = parseRotation(rotation);
+			if (parsedRotation == null) {
+				System.err.println("Unknown --rotation \"" + rotation + "\" - valid: auto, none, 90, 180, 270.");
+				return 1;
+			}
+
+			try (BleAdapter adapter = new BleAdapter()) {
+				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
+
+				if (found.isEmpty()) {
+					System.err.println("Device " + address + " not found during scan (run 'discover' first to confirm the address).");
+					return 1;
+				}
+
+				BleUtils.BleDeviceResult result = found.get(0);
+				List<PrinterDefinition> matches = PrinterCatalog.detect(result.getName());
+
+				if (matches.isEmpty()) {
+					System.err.println("Could not detect a known printer family from name \"" + result.getName() + "\".");
+					return 1;
+				}
+				if (matches.size() > 1) {
+					System.err.println("Ambiguous match for name \"" + result.getName() + "\": " + matches);
+					return 1;
+				}
+
+				PrinterDefinition definition = matches.get(0);
+				System.out.println("Detected: " + definition);
+
+				LabelPrinter printer;
+				try {
+					printer = PrinterFactory.create(definition, new BleTransport(result.getPeripheral(adapter)));
+				} catch (UnimplementedPrinterFamilyException e) {
+					System.err.println("Detected as " + definition + ", but that family isn't implemented yet.");
+					return 1;
+				}
+
+				try (LabelPrinter p = printer) {
+					p.connect();
+					System.out.println("Connected.");
+
+					PrinterCapabilities capabilities = p.getCapabilities();
+					System.out.println("Capabilities: " + capabilities);
+
+					BufferedImage img = image != null ? ImageIO.read(image) : buildTestPattern(capabilities.getPrintheadPixels());
+					if (img == null) {
+						System.err.println("Could not read image file: " + image);
+						return 1;
+					}
+
+					PrintJob job = new PrintJob()
+							.setCopies(copies)
+							.setContinuousMedia(continuous)
+							.setDensity(density)
+							.setRotation(parsedRotation);
+
+					System.out.println("Printing " + img.getWidth() + "x" + img.getHeight() + "px (copies=" + copies
+							+ ", continuous=" + continuous + ", density=" + (density != null ? density : "default")
+							+ ", rotation=" + parsedRotation + ")...");
+
+					p.print(img, job);
+
+					System.out.println("Done.");
+				}
+			}
+			return 0;
+		}
+
+		private static Rotation parseRotation(String value) {
+			switch (value.toLowerCase()) {
+			case "auto":
+				return Rotation.AUTO;
+			case "none":
+				return Rotation.NONE;
+			case "90":
+				return Rotation.CW_90;
+			case "180":
+				return Rotation.CW_180;
+			case "270":
+				return Rotation.CW_270;
+			default:
+				return null;
+			}
+		}
+
+		/** A solid black square with a white margin, sized to the printhead width - a safe default when no --image is given. */
+		private static BufferedImage buildTestPattern(int printheadPixels) {
+			int size = Math.max(printheadPixels, 1);
+			BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
+			Graphics2D g = img.createGraphics();
+			g.setColor(Color.WHITE);
+			g.fillRect(0, 0, size, size);
+			g.setColor(Color.BLACK);
+			int margin = Math.max(size / 8, 1);
+			g.fillRect(margin, margin, size - 2 * margin, size - 2 * margin);
+			g.dispose();
+			return img;
 		}
 	}
 }

@@ -1,8 +1,14 @@
 package cz.bliksoft.ptlabelprint.printer;
 
-import cz.bliksoft.javautils.ble.BlePeripheral;
+import cz.bliksoft.ptlabelprint.protocol.Transport;
 
-/** Constructs the right concrete {@link LabelPrinter} for a {@link PrinterDefinition}. */
+/**
+ * Constructs the right concrete {@link LabelPrinter} for a {@link PrinterDefinition}, given a
+ * {@link Transport} the caller has already built - not a BLE-specific type, so a caller can supply
+ * a {@code BleTransport} wrapping a {@code BlePeripheral} obtained through either a local- or
+ * remote-backed BLE adapter (once BSToolbox-BLE ships its own local/remote split, still uncommitted
+ * upstream as of this writing - see CLAUDE.md), or a future {@code SerialTransport}, unchanged.
+ */
 public final class PrinterFactory {
 
 	private PrinterFactory() {
@@ -14,12 +20,12 @@ public final class PrinterFactory {
 	 *         {@code PHOMEMO_*} families other than {@link PrinterFamily#PHOMEMO_D_SERIES} - see
 	 *         {@link PrinterFamily}'s own javadoc)
 	 */
-	public static LabelPrinter create(PrinterDefinition definition, BlePeripheral peripheral) {
+	public static LabelPrinter create(PrinterDefinition definition, Transport transport) {
 		switch (definition.getFamily()) {
 		case NIIMBOT:
-			return new NiimbotLabelPrinter(definition, peripheral);
+			return new NiimbotLabelPrinter(definition, transport);
 		case PHOMEMO_D_SERIES:
-			return new PhomemoDSeriesLabelPrinter(definition, peripheral);
+			return new PhomemoDSeriesLabelPrinter(definition, transport);
 		case PHOMEMO_M02:
 		case PHOMEMO_M04:
 		case PHOMEMO_M110:

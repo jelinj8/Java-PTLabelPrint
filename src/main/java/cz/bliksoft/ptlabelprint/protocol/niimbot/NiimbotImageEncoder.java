@@ -4,11 +4,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import cz.bliksoft.ptlabelprint.image.PixelSource;
+
 /**
  * Encodes a {@link PixelSource} into per-row packet data. Ported from niimbluelib's
  * {@code ImageEncoder} (src/image_encoder.ts) - the {@code printDirection}-aware rotation in
- * niimbluelib's own {@code CanvasImageSource} is not ported (no canvas here); see
- * {@link PixelSource}'s javadoc.
+ * niimbluelib's own {@code CanvasImageSource} is applied by the caller before encoding (see
+ * {@code printer.NiimbotLabelPrinter#print}, {@code image.ImageRotation}), not by this class.
  */
 public final class NiimbotImageEncoder {
 

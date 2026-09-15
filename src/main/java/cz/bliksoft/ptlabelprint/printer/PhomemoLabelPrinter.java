@@ -2,8 +2,7 @@ package cz.bliksoft.ptlabelprint.printer;
 
 import java.io.IOException;
 
-import cz.bliksoft.javautils.ble.BlePeripheral;
-import cz.bliksoft.ptlabelprint.protocol.BleTransport;
+import cz.bliksoft.ptlabelprint.protocol.Transport;
 
 /**
  * Shared plumbing for {@link LabelPrinter}s across Phomemo's protocol tags. Every Phomemo
@@ -18,6 +17,11 @@ import cz.bliksoft.ptlabelprint.protocol.BleTransport;
  * needs to know that.
  *
  * <p>
+ * Takes a {@link Transport}, not a BLE-specific type, at construction - built by the caller from
+ * whichever {@code BlePeripheral} (local- or, once BSToolbox-BLE ships it, remote-backed) or future
+ * transport (Serial, ...) they have; see {@link PrinterFactory}'s own javadoc.
+ *
+ * <p>
  * Has exactly one concrete subclass today ({@link PhomemoDSeriesLabelPrinter}) - this is a real
  * refactor removing real, currently-existing duplication between two files, not speculative
  * scaffolding for the unimplemented families (those have no {@link LabelPrinter} subclass at all,
@@ -27,11 +31,11 @@ import cz.bliksoft.ptlabelprint.protocol.BleTransport;
  */
 public abstract class PhomemoLabelPrinter extends AbstractLabelPrinter {
 
-	protected final BleTransport transport;
+	protected final Transport transport;
 
-	protected PhomemoLabelPrinter(PrinterDefinition definition, PrinterFamily expectedFamily, BlePeripheral peripheral) {
+	protected PhomemoLabelPrinter(PrinterDefinition definition, PrinterFamily expectedFamily, Transport transport) {
 		super(definition, expectedFamily);
-		this.transport = new BleTransport(peripheral);
+		this.transport = transport;
 	}
 
 	@Override
