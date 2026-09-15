@@ -1,7 +1,9 @@
 package cz.bliksoft.ptlabelprint;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 
 import cz.bliksoft.javautils.ble.BleAdapter;
 import cz.bliksoft.javautils.ble.BleCharacteristic;
@@ -27,6 +29,7 @@ import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterModel;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterModelMeta;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.RfidInfo;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.SoundSettingsItemType;
+import cz.bliksoft.ptlabelprint.protocol.phomemo.DSeriesLabelSizes;
 import cz.bliksoft.ptlabelprint.protocol.phomemo.DSeriesPrinter;
 import cz.bliksoft.ptlabelprint.protocol.phomemo.RasterImage;
 import cz.bliksoft.ptlabelprint.printer.LabelPrinter;
@@ -527,18 +530,20 @@ public class Cli implements Runnable {
 
 	/**
 	 * Prints a small validation test pattern via {@link DSeriesPrinter} (Phomemo's {@code d-series}
-	 * protocol - D30/D35/D50/D110/Q30/Q30S). Uses real consumables - deliberately the smallest of
-	 * phomymo's own confirmed-working D-series label presets (12mm x 12mm, its {@code D_SERIES_LABEL_SIZES['12x12']})
-	 * rather than an arbitrary size: the pre-rotation <em>height</em> becomes the printhead's fixed
-	 * physical dot-width after {@link RasterImage#rotate90Clockwise()}, so it must match real
-	 * hardware capacity, not be picked freely - an earlier arbitrary 60px value produced a
-	 * misaligned/doubled print on real hardware, presumably from the printer reinterpreting the
-	 * byte stream against its own fixed row width instead of the (too narrow) one this code
-	 * declared. This is a minimal validation pattern, not real label creation (no image pipeline
-	 * exists yet - see CLAUDE.md).
+	 * protocol - D30/D35/D50/Q30/Q30S, all confirmed by phomymo's own current {@code printers.json}
+	 * to share this exact protocol and BLE channel; only the Q30 itself is hardware-confirmed - see
+	 * CLAUDE.md). Uses real consumables - defaults to the smallest of phomymo's own
+	 * {@link DSeriesLabelSizes} presets (12mm x 12mm) rather than an arbitrary size: the
+	 * pre-rotation <em>height</em> becomes the printhead's fixed physical dot-width after
+	 * {@link RasterImage#rotate90Clockwise()}, so it must match real hardware capacity, not be
+	 * picked freely - an earlier arbitrary 60px value produced a misaligned/doubled print on real
+	 * hardware, presumably from the printer reinterpreting the byte stream against its own fixed
+	 * row width instead of the (too narrow) one this code declared. {@code --label} selects any of
+	 * {@link DSeriesLabelSizes}' other presets instead. This is a minimal validation pattern, not
+	 * real label creation (no image pipeline exists yet - see CLAUDE.md).
 	 */
 	@Command(name = "phomemo-print-test",
-			description = "Print a small test pattern to a Phomemo d-series printer (D30/D35/D50/D110/Q30/Q30S). Uses real consumables.")
+			description = "Print a small test pattern to a Phomemo d-series printer (D30/D35/D50/Q30/Q30S). Uses real consumables.")
 	static class PhomemoPrintTestCommand implements Callable<Integer> {
 
 		@Parameters(index = "0", description = "BLE address of the printer (see 'scan').")
@@ -554,8 +559,20 @@ public class Cli implements Runnable {
 		@Option(names = "--continuous", description = "Continuous tape instead of die-cut/gap labels.")
 		boolean continuous;
 
+		@Option(names = {"-l", "--label"},
+				description = "Label size preset in mm, WIDTHxHEIGHT (default: ${DEFAULT-VALUE}). Valid: 40x12, 30x12, "
+						+ "22x12, 12x12, 30x14, 22x14, 40x15, 30x15 (from phomymo's own D_SERIES_LABEL_SIZES).")
+		String label = "12x12";
+
 		@Override
 		public Integer call() throws Exception {
+			Optional<DSeriesLabelSizes.Preset> preset = DSeriesLabelSizes.find(label);
+			if (!preset.isPresent()) {
+				System.err.println("Unknown --label \"" + label + "\" - valid presets: "
+						+ DSeriesLabelSizes.all().stream().map(DSeriesLabelSizes.Preset::getKey).collect(Collectors.joining(", ")));
+				return 1;
+			}
+
 			try (BleAdapter adapter = new BleAdapter()) {
 				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
 
@@ -569,9 +586,9 @@ public class Cli implements Runnable {
 				transport.connect();
 
 				try {
-					RasterImage image = buildTestPattern();
+					RasterImage image = buildTestPattern(preset.get());
 					System.out.println("Printing " + (image.getWidthBytes() * 8) + "x" + image.getHeightLines()
-							+ "px test pattern (density=" + density + ", continuous=" + continuous + ")...");
+							+ "px test pattern (label=" + label + ", density=" + density + ", continuous=" + continuous + ")...");
 
 					DSeriesPrinter.print(transport, image, density, continuous, 0,
 							pct -> System.out.print("\rSending: " + pct + "%  "));
@@ -585,16 +602,11 @@ public class Cli implements Runnable {
 			return 0;
 		}
 
-		/**
-		 * phomymo's {@code D_SERIES_LABEL_SIZES['12x12']}: 12mm x 12mm at 203 DPI (8px/mm per
-		 * phomymo's own {@code PX_PER_MM}) = 96x96px pre-rotation - a solid black square with an
-		 * 8px white margin, so a working print shows a clearly visible, correctly-square black
-		 * block, not just "something happened".
-		 */
-		private static RasterImage buildTestPattern() {
-			int widthBytes = 12; // 96px: the label's length axis (pre-rotation width)
-			int heightLines = 96; // 96px: the label's printhead-width axis (pre-rotation height) - becomes the
-									// physical dot-width after rotation, so must match real hardware capacity
+		/** A solid black square/rectangle with an 8px white margin, so a working print shows a clearly visible block, not just "something happened". */
+		private static RasterImage buildTestPattern(DSeriesLabelSizes.Preset preset) {
+			int widthBytes = preset.getWidthBytes(); // the label's length axis (pre-rotation width)
+			int heightLines = preset.getHeightLines(); // the label's printhead-width axis (pre-rotation height) -
+														// becomes the physical dot-width after rotation
 			byte[] data = new byte[widthBytes * heightLines];
 
 			for (int row = 8; row < heightLines - 8; row++) {

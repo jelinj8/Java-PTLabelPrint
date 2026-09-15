@@ -112,7 +112,22 @@ real hardware.
 ports phomymo's `d-series` protocol and **has successfully printed on a real Phomemo Q30** via
 `ptlabelprint-cli phomemo-print-test <address>` - a 12mm x 12mm solid square, correctly sized,
 positioned, and shaped. Getting there took three real-hardware iterations; see "Debugging history"
-below for what each one actually was (useful precedent for the next device/model). The other 6
+below for what each one actually was (useful precedent for the next device/model).
+
+Re-reading `DSeriesCommands`/`DSeriesPrinter` confirms the print flow itself needs no per-model
+code at all - every dimension (image size, density, continuous vs. gap mode) is a caller parameter,
+nothing is hardcoded to the Q30 specifically, and the BLE channel is confirmed shared across the
+whole family. So **D30/D35/D50/Q30S are expected to work via the exact same code path already
+confirmed on the Q30** - though none of them is actually hardware-confirmed, only extrapolated from
+the shared protocol (no such hardware is available to this project). `DSeriesLabelSizes` now ports
+phomymo's own `D_SERIES_LABEL_SIZES` mm presets (8 entries: 40x12/30x12/22x12/12x12/30x14/22x14/
+40x15/30x15) so `phomemo-print-test --label <key>` isn't limited to the one hardcoded 12x12mm size
+- the default stays `12x12` (byte-for-byte the already-confirmed pattern). `D110` is **not** a real
+phomymo d-series model (checked against its actual current `printers.json` - see the correction
+below); an earlier version of this file wrongly listed it, most likely confused with Niimbot's own
+real `D110`/`D110_M` - not re-added to `PrinterCatalog`, since that would tie against the real
+Niimbot `D110` entry for every device actually named `D110...`, with no phomymo source to justify
+it. The other 6
 protocol tags (`m02`/`m04`/`m110`/generic `m-series`/`p12`/`tspl`) are now **cataloged, not yet
 implemented**: `PhomemoPrinterModel`/`PhomemoPrinterModelMeta`/`PhomemoPrinterModels` hold all 17 of
 phomymo's non-d-series `printers.json` rows verbatim (protocol tag, width, dpi, alignment,
@@ -215,7 +230,8 @@ D30" was misread as "speaks a Niimbot-compatible protocol." **That was wrong.** 
 against a real Q30, followed by reading phomymo's actual source
 (`src/web/constants.js`/`printer.js`/`printers.json`), confirmed:
 
-- The Q30 (and D30/D35/D50/D110) speak phomymo's own **`d-series` protocol** - an ESC/POS-derived,
+- The Q30 (and D30/D35/D50, per phomymo's own current `printers.json` - see the D110 correction
+  below) speak phomymo's own **`d-series` protocol** - an ESC/POS-derived,
   **fire-and-forget** raster command stream (`ESC @` init, `GS v 0` raster header, `ESC d 0` /
   `ESC J n` feed, plus a couple of proprietary `0x1f 0x11 ..` config commands) - **not** Niimbot's
   `0x55 0x55 ... 0xAA 0xAA` request/response framing at all. "Similar to D30" meant "shares
@@ -281,10 +297,11 @@ Manual real-hardware check, once built (`mvn package -Pdist`, then from `target/
 ./ptlabelprint-cli.sh raw <address> <hex>  # protocol-agnostic: write raw hex, print whatever comes back
                                             # (--service/--write-char/--notify-char/--with-response/--read
                                             # for testing an unfamiliar device's channel by hand)
-./ptlabelprint-cli.sh phomemo-print-test <address>   # prints a small 12x12mm test square via
-                                            # DSeriesPrinter - USES REAL CONSUMABLES (Phomemo
-                                            # D30/D35/D50/D110/Q30/Q30S only; confirmed working
-                                            # on a real Q30, see "Status")
+./ptlabelprint-cli.sh phomemo-print-test <address>   # prints a test square via DSeriesPrinter -
+                                            # USES REAL CONSUMABLES (Phomemo D30/D35/D50/Q30/Q30S
+                                            # only; confirmed working on a real Q30, see "Status").
+                                            # --label picks any of DSeriesLabelSizes' mm presets
+                                            # (default 12x12, the hardware-confirmed size)
 ```
 
 ## What this is
@@ -301,7 +318,8 @@ Two protocol families are in scope right now:
   `cz.bliksoft.ptlabelprint.protocol.niimbot`, unverified against real hardware yet (see "Status").
   **Not** confirmed to cover any Phomemo model - see the corrected finding above.
 - **phomemo** — Phomemo's own printer families (`d-series` covers the Q30 in hand, plus
-  D30/D35/D50/D110; also `m02`/`m04`/`m110`/generic `m-series`/`p12`/`tspl`), ported from
+  D30/D35/D50/Q30S (not D110 - see the correction near "Status"); also `m02`/`m04`/`m110`/generic
+  `m-series`/`p12`/`tspl`), ported from
   [phomymo](https://github.com/transcriptionstream/phomymo) (MIT). `d-series` implemented and
   hardware-confirmed; the other 6 tags are now cataloged (all 17 of phomymo's non-d-series
   `printers.json` rows, in `protocol.phomemo.PhomemoPrinterModels`) but not implemented - see
@@ -325,16 +343,27 @@ printer-abstraction-layer design:
 - **phomemo** (not implemented yet, but now unblocked with a verified MIT reference) — Phomemo's
   own lineup, which is itself **several distinct sub-protocols**, all dispatched by
   `printers.json`'s per-model `"protocol"` tag:
-  - `d-series` — Q30/Q30S/D30/D35/D50/D110. **Implemented and confirmed printing on a real Q30**
+  - `d-series` — Q30/Q30S/D30/D35/D50 (**not** D110 - phomymo's own current `printers.json`
+    `namePatterns` for this row are `["D30","D35","D50","Q30S","Q30","D"]`, no `"D110"` among them;
+    an earlier version of this file's D-series lists included it anyway, almost certainly confused
+    with Niimbot's own real `D110`/`D110_M` models - see `protocol.niimbot.PrinterModel` - given
+    this exact project's own history of that exact confusion elsewhere; not re-added to
+    `PrinterCatalog` since doing so with no phomymo source behind it would also permanently tie
+    against the real Niimbot `D110` catalog entry for longest-prefix matching, on every device
+    actually named `D110...`). **Implemented and confirmed printing on a real Q30**
     (`RasterImage`/`DSeriesCommands`/`DSeriesPrinter` in `cz.bliksoft.ptlabelprint.protocol.phomemo`
-    - see "Status"/"Debugging history"). BLE: service `0xff00`, write char `0xff02`
-    (`WRITE`/`WRITE_WITHOUT_RESPONSE` - this port uses plain write-without-response, matching
-    phomymo exactly; see "Debugging history" #3 for why that's confirmed fine as-is), notify char
-    `0xff03` (unused for acks - this protocol is fire-and-forget). Rotated raster (labels print
-    sideways - rotate the image 90° CW before sending, `RasterImage#rotate90Clockwise`, ported from
-    phomymo's `rotateRaster90CW`). **The pre-rotation image height must equal the target printer's
-    physical printhead dot-width** (confirmed the hard way - see "Debugging history" #2); use
-    phomymo's `D_SERIES_LABEL_SIZES` as the source of truth per model rather than guessing.
+    - see "Status"/"Debugging history") - the print flow itself is fully model-generic (every
+    dimension is a caller parameter, nothing Q30-specific), so D30/D35/D50/Q30S are expected to work
+    via the identical code path, though only the Q30 is actually hardware-confirmed. BLE: service
+    `0xff00`, write char `0xff02` (`WRITE`/`WRITE_WITHOUT_RESPONSE` - this port uses plain
+    write-without-response, matching phomymo exactly; see "Debugging history" #3 for why that's
+    confirmed fine as-is), notify char `0xff03` (unused for acks - this protocol is fire-and-forget).
+    Rotated raster (labels print sideways - rotate the image 90° CW before sending,
+    `RasterImage#rotate90Clockwise`, ported from phomymo's `rotateRaster90CW`). **The pre-rotation
+    image height must equal the target printer's physical printhead dot-width** (confirmed the hard
+    way - see "Debugging history" #2); `DSeriesLabelSizes` ports phomymo's own
+    `D_SERIES_LABEL_SIZES` mm presets (8 entries) as the source of truth rather than guessing -
+    `ptlabelprint-cli phomemo-print-test --label <key>` selects one.
     Commands (all one-way, no response expected, 128-byte chunks with a 20ms delay per
     `BLE.CHUNK_SIZE`/`CHUNK_DELAY_MS` - not row-aligned, and confirmed fine that way, see
     "Debugging history" #3):
@@ -464,8 +493,10 @@ manufacturer/protocol-family split described above:
     high-level API (`NiimbotDevice`). Confirmed against a real D11_H and M2_H, both info and
     printing (see "Status") - the other 5 print tasks/67 models are ported but untested.
   - `.protocol.phomemo` - Phomemo's families: `RasterImage` (1bpp raster + rotation),
-    `DSeriesCommands` (byte builders), `DSeriesPrinter` (the `d-series` print flow) - confirmed
-    working against a real Q30 (see "Status"/"Debugging history"). `PhomemoPrinterModel`/
+    `DSeriesCommands` (byte builders), `DSeriesPrinter` (the `d-series` print flow, model-generic -
+    confirmed working against a real Q30, D30/D35/D50/Q30S untested but expected to work via the
+    same code path - see "Status"/"Debugging history"), `DSeriesLabelSizes` (phomymo's own
+    `D_SERIES_LABEL_SIZES` mm presets). `PhomemoPrinterModel`/
     `PhomemoPrinterModelMeta`/`PhomemoPrinterModels` catalog the other 6 sub-protocols
     (`m02`/`m04`/`m110`/generic `m-series`/`p12`/`tspl`) - data only, no command-builder/print-flow
     code for any of them yet; add sibling classes/sub-packages here when one is actually ported,
