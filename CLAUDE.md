@@ -65,6 +65,11 @@ triggering it by accident.
   encoding bug, which would drop the *same* row every time with a clean edge. Unlike Phomemo's
   `d-series`, the Niimbot protocol did **not** require the image width to exactly match the
   printhead's physical capacity - the printer accepted the declared `cols` directly.
+- `ptlabelprint-cli print-test <address> --image=<file>`: **printed successfully** with an
+  asymmetric "L"-marker test pattern (not a solid rectangle - see "Unified image-print abstraction"
+  below for why that distinction matters here), confirming `LabelPrinter#print(BufferedImage,
+  PrintJob)`'s new `PrintDirection`-aware mandatory 90°CW rotation is correct in direction, not just
+  dimensionally plausible - user-confirmed against the physical label.
 
 **Confirmed against a real Niimbot M2 (M2_H)**: found via an unfiltered `discover` scan
 (`M2_H-I814050044` → correctly detected as `M2_H(NIIMBOT)`, no OS-level pairing needed).
@@ -218,14 +223,18 @@ square) exercises the whole thing end to end; `niimbot-print-test`/`phomemo-prin
 deliberately left as-is (family-specific options this minimal common surface doesn't expose), not
 refactored to delegate to the new path.
 
-**D11_H needs a real hardware re-verification, not just code review, next time it's available**:
-implementing `PrintDirection`-aware rotation is a genuine behavior change to an already-hardware-
-confirmed path - niimbluelib rotates 90°CW whenever `PrintDirection == LEFT` (D11_H's value; M2_H's
-is `TOP`, needing no rotation, unchanged), which this project's own `NiimbotImageEncoder` never
-implemented before now. The earlier "confirmed working" D11_H print used a solid rectangle, which
-can't reveal a 90°-orientation bug - so this was a real latent gap the existing test couldn't have
-caught, not a regression risk introduced by this change. Use an **asymmetric** test pattern (e.g. an
-"L"/"F" shape, or a rectangle with one corner marked) for the re-check, not another solid one.
+**D11_H's `PrintDirection`-aware rotation is now confirmed against real hardware**: implementing it
+was a genuine behavior change to an already-hardware-confirmed path - niimbluelib rotates 90°CW
+whenever `PrintDirection == LEFT` (D11_H's value; M2_H's is `TOP`, needing no rotation, unchanged),
+which this project's own `NiimbotImageEncoder` never implemented before this change. The earlier
+"confirmed working" D11_H print used a solid rectangle, which couldn't have revealed a
+90°-orientation bug - so this was a real latent gap, not a regression risk introduced here.
+Re-verified via `ptlabelprint-cli print-test <address> --image=<file>` with an asymmetric "L"-marker
+pattern (a landscape rectangle with a bar on the left edge, a bar on the bottom edge, and a dot near
+the top-right corner) at the default `--rotation=auto`, which for this image resolves to the
+mandatory-orientation-only candidate (no additional auto-fit rotation needed): printed correctly,
+confirmed by the user against the physical label - the rotation direction is genuinely correct, not
+just dimensionally plausible.
 
 **Neither family's real device advertises the service UUID `BleTransport.scanFilter()`/the CLI's
 `scan` command filters on** - confirmed for both the Phomemo Q30 and a genuine Niimbot D11_H (found
