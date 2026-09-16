@@ -635,3 +635,14 @@ usage examples — don't re-derive it from scratch.
 Note from that library's own docs: GATT-level bonding/pairing is not implemented yet, and Niimbot
 printers are called out there as a device family that may need it — a printer requiring OS-level
 pairing before GATT access will need to be paired through the OS first until that lands upstream.
+
+## Release process
+
+Tagged releases (Maven Central + GitHub release with the `-Pdist` CLI zip attached) use the
+`prepare-maven-release` / `deploy-maven-release` skills — don't hand-edit the `<revision>` property
+or run `mvn deploy` directly. Untagged `master` pushes also publish a `-SNAPSHOT` build to
+Forgejo's own package registry via `.forgejo/workflows/maven-snapshot-deploy.yml`
+(`maven-mirror-sync.yml` forces an immediate pull-mirror sync so that snapshot deploy doesn't wait
+for Forgejo's periodic mirror interval). `.forgejo/workflows/` files are the source of truth on
+GitHub (Forgejo pull-mirrors this repo); a commit made only on the Forgejo side would be silently
+discarded on the next sync.
