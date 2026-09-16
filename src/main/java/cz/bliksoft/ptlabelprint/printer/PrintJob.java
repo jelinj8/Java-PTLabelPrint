@@ -9,7 +9,9 @@ public class PrintJob {
 	private int copies = 1;
 	private boolean continuousMedia = false;
 	private Integer density;
-	private Rotation rotation = Rotation.AUTO;
+	/** {@link Rotation#NONE}, not {@link Rotation#AUTO} - see {@link Rotation#NONE}'s own javadoc for
+	 *  why the auto-fit-rotate behavior must be requested explicitly, not assumed by default. */
+	private Rotation rotation = Rotation.NONE;
 
 	public int getCopies() {
 		return copies;
@@ -46,6 +48,7 @@ public class PrintJob {
 		return this;
 	}
 
+	/** {@link Rotation#NONE} (default) unless explicitly set otherwise - see {@link Rotation}'s own javadoc. */
 	public Rotation getRotation() {
 		return rotation;
 	}

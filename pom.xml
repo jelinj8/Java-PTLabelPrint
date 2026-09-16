@@ -14,8 +14,7 @@
 		Brother P-touch support are planned as additional protocol families. Send images to the
 		printer and read back its properties through a typed control API.</description>
 
-	<!-- TODO: fill in url/scm once this project has a real GitHub repo; the release profile's
-		javadoc/source jars don't require them, only a "mvn deploy" to Central would. -->
+	<url>https://github.com/jelinj8/Java-PTLabelPrint</url>
 
 	<licenses>
 		<!-- MIT, matching niimbluelib (https://github.com/MultiMote/niimbluelib), the protocol
@@ -35,13 +34,19 @@
 		</developer>
 	</developers>
 
+	<scm>
+		<connection>scm:git:https://github.com/jelinj8/Java-PTLabelPrint.git</connection>
+		<developerConnection>scm:git:https://github.com/jelinj8/Java-PTLabelPrint.git</developerConnection>
+		<url>https://github.com/jelinj8/Java-PTLabelPrint</url>
+	</scm>
+
 	<properties>
 		<revision>0.1.0-SNAPSHOT</revision>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<maven.compiler.release>8</maven.compiler.release>
 		<junit.version>5.10.2</junit.version>
 		<jserialcomm.version>2.11.4</jserialcomm.version>
-		<bstoolbox-ble.version>0.5.0</bstoolbox-ble.version>
+		<bstoolbox-ble.version>0.6.0</bstoolbox-ble.version>
 		<bstoolbox.version>0.8</bstoolbox.version>
 		<picocli.version>4.7.6</picocli.version>
 	</properties>

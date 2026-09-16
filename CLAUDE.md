@@ -199,12 +199,25 @@ user specified: each family/model's own **mandatory** orientation is always appl
 `d-series`: unconditional 90°CW, unchanged, still inside `DSeriesPrinter.print`; Niimbot: 90°CW iff
 the connected model's `PrinterModelMeta.getPrintDirection() == PrintDirection.LEFT`, newly
 implemented here - see below for why this is a real behavior change for D11_H specifically) - then
-`Rotation.NONE` uses that as final regardless of fit, an explicit `CW_90`/`CW_180`/`CW_270`
-pre-rotates the *original* source by that much before the mandatory step (an authoritative override,
-skips auto-fit), and the default `Rotation.AUTO` tries the mandatory-only result first and, only if
-it doesn't fit the printhead axis, tries exactly one additional 90°CW pre-rotation before falling
-back to cropping (`RotationResolverTest` verifies this math directly, including the not-yet-applied-
-mandatory-rotation-aware fit check). Phomemo also gained `DSeriesPrinterModel`/
+`Rotation.NONE` (`PrintJob`'s **default**) uses that as final regardless of fit, an explicit
+`CW_90`/`CW_180`/`CW_270` pre-rotates the *original* source by that much before the mandatory step
+(an authoritative override, skips auto-fit), and `Rotation.AUTO` (must be requested explicitly, not
+the default - see below) tries the mandatory-only result first and, only if it doesn't fit the
+printhead axis, tries exactly one additional 90°CW pre-rotation before falling back to cropping
+(`RotationResolverTest` verifies this math directly, including the not-yet-applied-mandatory-
+rotation-aware fit check).
+
+**`Rotation.NONE`, not `Rotation.AUTO`, is `PrintJob`'s default - changed after real-hardware use
+in `StorageManagerServer` found the original default unsafe for gapped/die-cut media.** A Niimbot M2
+(no mandatory rotation of its own - `PrintDirection.TOP`) printing a 50mm-wide label onto a
+printhead whose real capacity is ~48.8mm (576px/300dpi) is a trivial, croppable overage - but with
+`AUTO` as the default, `RotationResolver` "fixed" it by rotating 90°, which doesn't remove the
+overage, it just moves it onto the *other* axis (the feed/length direction) - one that's equally
+fixed by the die-cut label's own length on gapped media, so the fix just relocated the problem and
+mis-oriented the print besides. Rotating to satisfy a printhead-width mismatch is only actually safe
+for continuous media, where the feed axis is unconstrained - so `AUTO` now has to be requested
+explicitly, per print, rather than assumed safe as a blanket default across both media kinds. See
+`Rotation.NONE`'s own javadoc for the full reasoning. Phomemo also gained `DSeriesPrinterModel`/
 `DSeriesPrinterModelMeta`/`DSeriesPrinterModels` (a per-model dpi/printheadPixels/density-range
 table for `d-series` - all 5 entries identical, 203dpi/96px/1-8, since only the Q30's values are
 actually confirmed and phomymo's own `printers.json` doesn't differentiate the family further - this

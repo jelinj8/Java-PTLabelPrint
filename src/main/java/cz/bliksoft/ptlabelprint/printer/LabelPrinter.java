@@ -27,10 +27,12 @@ import cz.bliksoft.ptlabelprint.image.PrinterCapabilities;
  * than a raster), copy count, gapped-vs-continuous media, and density (passed through in whichever
  * family-native scale applies to the connected printer - not cross-family-normalized - and
  * validated against that family's real range, throwing a clear exception naming the valid range if
- * out of bounds), plus rotation (see {@link Rotation}'s own javadoc for the full algorithm: each
- * family/model's own mandatory orientation is always applied first; auto-fit is a secondary
- * correction on top of it, never a decision made independently; an explicit {@link Rotation}
- * overrides auto-fit entirely). {@link #getCapabilities()} exposes what's needed to reason about
+ * out of bounds), plus rotation (see {@link Rotation}'s own javadoc for the full algorithm and why
+ * {@link Rotation#NONE} - mandatory per-model orientation only, no auto-fit - is the default rather
+ * than {@link Rotation#AUTO}: gapped/die-cut media has both axes fixed by the physical label stock,
+ * so auto-fitting the printhead axis by rotating can just move a minor overage onto the
+ * equally-fixed feed axis instead of fixing it - safe only for continuous media, or when a caller
+ * explicitly opts in per print). {@link #getCapabilities()} exposes what's needed to reason about
  * fit before printing: DPI, the printhead's physical pixel width, and the density range.
  */
 public interface LabelPrinter extends AutoCloseable {
