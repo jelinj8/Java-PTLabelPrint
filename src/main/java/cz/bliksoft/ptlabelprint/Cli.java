@@ -32,6 +32,7 @@ import cz.bliksoft.ptlabelprint.protocol.niimbot.NiimbotDevice;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.NiimbotImageEncoder;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.NiimbotPrintTasks;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PageColorType;
+import cz.bliksoft.ptlabelprint.protocol.niimbot.PaperInfo;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PrintOptions;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterInfo;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterModel;
@@ -200,6 +201,13 @@ public class Cli implements Runnable {
 						System.out.println("Loaded media (ribbon RFID): " + ribbon);
 					} catch (Exception e) {
 						System.out.println("Loaded media (ribbon RFID): query failed: " + e);
+					}
+
+					try {
+						PaperInfo paper = device.getPaperInfo();
+						System.out.println("Loaded media (paper geometry): " + paper);
+					} catch (Exception e) {
+						System.out.println("Loaded media (paper geometry): query failed: " + e);
 					}
 
 					try {

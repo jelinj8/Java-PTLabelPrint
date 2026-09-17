@@ -34,8 +34,8 @@ class PacketGeneratorTest {
 
 	@Test
 	void unmappedCommandIsRejected() {
-		// GET_PAPER_INFO isn't wired up yet - mapped() must not silently misclassify it as one-way.
-		assertThrows(IllegalArgumentException.class, () -> PacketGenerator.mapped(RequestCommandId.GET_PAPER_INFO, new byte[] {1}));
+		// ANTI_FAKE isn't wired up yet - mapped() must not silently misclassify it as one-way.
+		assertThrows(IllegalArgumentException.class, () -> PacketGenerator.mapped(RequestCommandId.ANTI_FAKE, new byte[] {1}));
 	}
 
 	@Test

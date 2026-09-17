@@ -64,6 +64,45 @@ class PacketParserTest {
 	}
 
 	@Test
+	void parsesPaperInfoResponse() {
+		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_CALIBRATE_HEIGHT.getCode(), new byte[] {
+				0x00, 0x1e, // gapHeightPixel = 30
+				0x02, 0x76, // totalHeightPixel = 630
+				0x01, // paperType = WITH_GAPS
+				0x01, 0x2c, // gapHeight = 300 -> 30.0mm
+				0x02, 0x76, // totalHeight = 630 -> 63.0mm
+				0x01, (byte) 0x80, // paperWidthPixel = 384
+				0x01, 0x40, // paperWidth = 320 -> 32.0mm
+				0x00, // direction = 0
+				0x00, 0x14, // tailLengthPixel = 20
+				0x00, 0x14, // tailLength = 20 -> 2.0mm
+		});
+
+		PaperInfo info = PacketParser.parsePaperInfoResponse(packet);
+
+		assertEquals(true, info.isValid());
+		assertEquals(30, info.getGapHeightPixel());
+		assertEquals(630, info.getTotalHeightPixel());
+		assertEquals(LabelType.WITH_GAPS, info.getPaperType());
+		assertEquals(30.0, info.getGapHeight());
+		assertEquals(63.0, info.getTotalHeight());
+		assertEquals(384, info.getPaperWidthPixel());
+		assertEquals(32.0, info.getPaperWidth());
+		assertEquals(0, info.getDirection());
+		assertEquals(20, info.getTailLengthPixel());
+		assertEquals(2.0, info.getTailLength());
+		// derived fields, not read directly off the wire
+		assertEquals(33.0, info.getPaperHeight());
+		assertEquals(600, info.getPaperHeightPixel());
+	}
+
+	@Test
+	void paperInfoResponseWithUnrecognizedLengthIsInvalid() {
+		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_CALIBRATE_HEIGHT.getCode(), new byte[] {1, 2, 3, 4});
+		assertEquals(false, PacketParser.parsePaperInfoResponse(packet).isValid());
+	}
+
+	@Test
 	void serialNumberBetweenFourAndSevenBytesIsHex() {
 		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_PRINTER_INFO_SERIAL_NUMBER.getCode(),
 				new byte[] {0x01, 0x02, 0x03, 0x04, 0x05});

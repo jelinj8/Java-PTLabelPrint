@@ -217,6 +217,11 @@ public class NiimbotDevice {
 		return PacketParser.parseRfidInfoResponse(send(PacketGenerator.rfidInfo2()));
 	}
 
+	/** Read the loaded paper's geometry (gap/total/tail height, width, in both pixels and mm). */
+	public PaperInfo getPaperInfo() throws IOException, TimeoutException {
+		return PacketParser.parsePaperInfoResponse(send(PacketGenerator.getPaperInfo()));
+	}
+
 	public HeartbeatPrinterInfoData heartbeatPrinterInfo() throws IOException, TimeoutException {
 		return PacketParser.parseHeartbeatPrinterInfoResponse(send(PacketGenerator.heartbeat(HeartbeatType.PRINTER_INFO)));
 	}

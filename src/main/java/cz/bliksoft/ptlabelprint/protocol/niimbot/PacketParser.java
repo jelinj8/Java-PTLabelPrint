@@ -163,6 +163,39 @@ public class PacketParser {
 		return info;
 	}
 
+	/**
+	 * Ported from niimbluelib's {@code parsePaperInfoResponse}. Its own comment notes the response
+	 * can come back shorter than 18 bytes with an unknown layout - only the 18-byte form is parsed
+	 * (matching upstream), anything else yields {@link PaperInfo#isValid()} {@code false}.
+	 */
+	public static PaperInfo parsePaperInfoResponse(NiimbotPacket packet) {
+		requireAtLeast(packet, 4);
+
+		PaperInfo info = new PaperInfo();
+
+		if (packet.getDataLength() == 18) {
+			info.setValid(true);
+
+			SequentialDataReader r = new SequentialDataReader(packet.getData());
+			info.setGapHeightPixel(r.readI16());
+			info.setTotalHeightPixel(r.readI16());
+			info.setPaperType(LabelType.fromCode(r.readI8()).orElse(LabelType.INVALID));
+			info.setGapHeight(r.readI16() / 10.0);
+			info.setTotalHeight(r.readI16() / 10.0);
+			info.setPaperWidthPixel(r.readI16());
+			info.setPaperWidth(r.readI16() / 10.0);
+			info.setDirection(r.readI8());
+			info.setTailLengthPixel(r.readI16());
+			info.setTailLength(r.readI16() / 10.0);
+			r.end();
+
+			info.setPaperHeight(info.getTotalHeight() - info.getGapHeight());
+			info.setPaperHeightPixel(info.getTotalHeightPixel() - info.getGapHeightPixel());
+		}
+
+		return info;
+	}
+
 	public static HeartbeatPrinterInfoData parseHeartbeatPrinterInfoResponse(NiimbotPacket packet) {
 		requireExactly(packet, 10);
 

@@ -36,6 +36,8 @@ public class PacketGenerator {
 		COMMANDS_MAP.put(RequestCommandId.PRINTER_STATUS_DATA, Collections.singletonList(ResponseCommandId.IN_PRINTER_STATUS_DATA));
 		COMMANDS_MAP.put(RequestCommandId.RFID_INFO, Collections.singletonList(ResponseCommandId.IN_RFID_INFO));
 		COMMANDS_MAP.put(RequestCommandId.RFID_INFO_2, Collections.singletonList(ResponseCommandId.IN_RFID_INFO_2));
+		// Shares its response ID with LABEL_POSITIONING_CALIBRATION - matches niimbluelib's own commandsMap exactly, not a typo here.
+		COMMANDS_MAP.put(RequestCommandId.GET_PAPER_INFO, Collections.singletonList(ResponseCommandId.IN_CALIBRATE_HEIGHT));
 		COMMANDS_MAP.put(RequestCommandId.HEARTBEAT, Arrays.asList(ResponseCommandId.IN_HEARTBEAT_BASIC,
 				ResponseCommandId.IN_HEARTBEAT_PRINTER_INFO, ResponseCommandId.IN_HEARTBEAT_ADVANCED_1,
 				ResponseCommandId.IN_HEARTBEAT_ADVANCED_2));
@@ -104,6 +106,10 @@ public class PacketGenerator {
 
 	public static NiimbotPacket rfidInfo2() {
 		return mapped(RequestCommandId.RFID_INFO_2, new byte[] {1});
+	}
+
+	public static NiimbotPacket getPaperInfo() {
+		return mapped(RequestCommandId.GET_PAPER_INFO, new byte[] {1});
 	}
 
 	public static NiimbotPacket setAutoShutDownTime(AutoShutdownTime time) {
