@@ -2,6 +2,8 @@ package cz.bliksoft.ptlabelprint.printer;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 import cz.bliksoft.ptlabelprint.image.PrinterCapabilities;
@@ -52,6 +54,52 @@ public interface LabelPrinter extends AutoCloseable {
 	 * what's covered and what isn't.
 	 */
 	void print(BufferedImage image, PrintJob job) throws IOException, TimeoutException;
+
+	/**
+	 * Prints a sequence of images, collapsing any run of consecutive identical images into a single
+	 * {@link #print} call with its copy count multiplied by the run length, instead of one
+	 * {@link #print} call per image. Identity ({@code ==}) is checked first - the normal case, since a
+	 * caller decoding from a source that already reuses one instance per logical copy (e.g. a ZPL
+	 * template's own {@code printQuantity}) preserves that identity through decoding - so the common
+	 * batch doesn't pay for pixel comparison at all; see {@link #imagesEqualByPixels} for the
+	 * (currently unused by this method, kept for a future distinct-object-but-same-content case) slower
+	 * fallback. Each family's own {@link #print}/copies handling then decides how to realize the
+	 * collapsed call - some (Niimbot) transmit the image once and let the printer replicate it
+	 * natively; others (Phomemo d-series, no native multi-copy concept) still resend the raster
+	 * internally per copy - either way this is never worse than the naive per-image loop, and avoids
+	 * redundant re-encoding/re-transmission, especially costly over a slow transport like Bluetooth.
+	 * {@code job}'s own copies count is used as a per-image multiplier (normally 1) rather than
+	 * assumed, and is restored to that original value before this method returns.
+	 */
+	default void printBatch(List<BufferedImage> images, PrintJob job) throws IOException, TimeoutException {
+		int baseCopies = job.getCopies();
+		int i = 0;
+		while (i < images.size()) {
+			BufferedImage current = images.get(i);
+			int runLength = 1;
+			while (i + runLength < images.size() && images.get(i + runLength) == current)
+				runLength++;
+			job.setCopies(baseCopies * runLength);
+			print(current, job);
+			i += runLength;
+		}
+		job.setCopies(baseCopies);
+	}
+
+	/**
+	 * Slower, currently-unused-by-{@link #printBatch} fallback for detecting equal-content-but-distinct
+	 * image instances (e.g. a template emitting several separately-authored but identical labels) -
+	 * pixel-by-pixel, since {@link BufferedImage} has no useful {@code equals()}. Kept available for
+	 * when that case is worth optimizing too, without needing to touch {@link #printBatch}'s hot path.
+	 */
+	static boolean imagesEqualByPixels(BufferedImage a, BufferedImage b) {
+		if (a == b)
+			return true;
+		int w = a.getWidth(), h = a.getHeight();
+		if (w != b.getWidth() || h != b.getHeight())
+			return false;
+		return Arrays.equals(a.getRGB(0, 0, w, h, null, 0, w), b.getRGB(0, 0, w, h, null, 0, w));
+	}
 
 	/**
 	 * The connected printer's DPI, physical printhead pixel width, and density range.
