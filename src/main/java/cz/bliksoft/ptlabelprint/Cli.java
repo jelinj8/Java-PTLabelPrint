@@ -62,7 +62,7 @@ import picocli.CommandLine.Parameters;
  * layer - manufacturer-agnostic BLE-name-based family detection plus a unified connect lifecycle
  * (see {@link LabelPrinter}'s own javadoc for why printing itself still isn't unified).
  */
-@Command(name = "ptlabelprint-cli", mixinStandardHelpOptions = true, version = "ptlabelprint 0.1.0-SNAPSHOT",
+@Command(name = "ptlabelprint-cli", mixinStandardHelpOptions = true, versionProvider = Cli.VersionProvider.class,
 		description = "CLI for Niimbot/Phomemo label printers (BLE, optionally Serial/USB) plus protocol-agnostic BLE diagnostics.",
 		subcommands = {Cli.ScanCommand.class, Cli.InfoCommand.class, Cli.MediaCommand.class,
 				Cli.NiimbotCalibrateCommand.class, Cli.NiimbotSetTimeCommand.class, Cli.NiimbotFirmwareUpgradeCommand.class,
@@ -74,6 +74,22 @@ public class Cli implements Runnable {
 	public static void main(String[] args) {
 		int exitCode = new CommandLine(new Cli()).execute(args);
 		System.exit(exitCode);
+	}
+
+	/**
+	 * Reads the real released version from the jar manifest's {@code Implementation-Version}
+	 * entry (populated by maven-jar-plugin's {@code addDefaultImplementationEntries}, see pom.xml)
+	 * instead of a hardcoded string that would silently go stale on every release - confirmed to
+	 * do exactly that (still said "0.1.0-SNAPSHOT" several releases later). Falls back to a plain
+	 * label when run from raw classes (IDE/test execution) rather than a built jar, since there's
+	 * no manifest to read in that case.
+	 */
+	static final class VersionProvider implements CommandLine.IVersionProvider {
+		@Override
+		public String[] getVersion() {
+			String version = Cli.class.getPackage().getImplementationVersion();
+			return new String[] { "ptlabelprint " + (version != null ? version : "(development build)") };
+		}
 	}
 
 	@Override
