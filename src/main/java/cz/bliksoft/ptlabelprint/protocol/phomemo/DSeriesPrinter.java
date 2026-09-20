@@ -80,15 +80,19 @@ public final class DSeriesPrinter {
 
 		transport.write(DSeriesCommands.header(rotated.getWidthBytes(), printRows));
 
-		for (int i = 0; i < printData.length; i += CHUNK_SIZE) {
-			byte[] chunk = Arrays.copyOfRange(printData, i, Math.min(i + CHUNK_SIZE, printData.length));
-			transport.write(chunk);
-			sleep(CHUNK_DELAY_MS);
-
-			if (onProgress != null) {
-				int sent = Math.min(i + chunk.length, printData.length);
-				onProgress.accept((int) Math.round(sent * 100.0 / printData.length));
-			}
+		// A single writeStream() call, not a per-chunk transport.write() loop: the latter costs one
+		// round trip per chunk, cheap over a direct local connection but - confirmed on real
+		// hardware - slow enough over this library's own remote-adapter feature (especially an
+		// ESP32-class remote bridge) that a long enough print's total wall-clock time silently blew
+		// past the Q30's own real-time expectations, even though every individual write still
+		// succeeded. See Transport#writeStream's doc. This does mean no more incremental progress
+		// during the transfer itself - onProgress now only ever sees 0 and 100.
+		if (onProgress != null) {
+			onProgress.accept(0);
+		}
+		transport.writeStream(printData, CHUNK_SIZE, CHUNK_DELAY_MS);
+		if (onProgress != null) {
+			onProgress.accept(100);
 		}
 
 		sleep(100);

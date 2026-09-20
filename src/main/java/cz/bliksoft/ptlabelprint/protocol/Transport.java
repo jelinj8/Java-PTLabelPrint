@@ -1,6 +1,7 @@
 package cz.bliksoft.ptlabelprint.protocol;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.function.Consumer;
 
 /**
@@ -26,6 +27,35 @@ public interface Transport {
 
 	/** Write raw bytes to the printer (a full framed packet, or a plain command/data chunk, depending on the protocol family). */
 	void write(byte[] data) throws IOException;
+
+	/**
+	 * Writes {@code data} as successive {@code chunkSize}-byte pieces, sleeping
+	 * {@code chunkDelayMs} between writes - for a one-way, ack-free protocol family (e.g.
+	 * Phomemo's {@code d-series}) that already sends many same-destination writes back-to-back
+	 * with a fixed inter-write delay, exactly like this. The default implementation is a plain
+	 * loop over {@link #write}, correct for any transport but paying one round trip per chunk;
+	 * {@link BleTransport} overrides this with a single-round-trip version, since that per-chunk
+	 * round trip is cheap over a direct local connection but can make a long transfer's total
+	 * wall-clock time exceed a downstream peripheral's own real-time expectations once it's
+	 * carried over a higher-latency link (this library's own remote-adapter feature, especially
+	 * an ESP32-class remote bridge) - confirmed on real hardware: long Phomemo prints silently
+	 * failed through such a bridge specifically because of this, even though every individual
+	 * write still succeeded.
+	 */
+	default void writeStream(byte[] data, int chunkSize, long chunkDelayMs) throws IOException {
+		for (int offset = 0; offset < data.length; offset += chunkSize) {
+			if (offset > 0 && chunkDelayMs > 0) {
+				try {
+					Thread.sleep(chunkDelayMs);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IOException("Interrupted during writeStream", e);
+				}
+			}
+			int len = Math.min(chunkSize, data.length - offset);
+			write(Arrays.copyOfRange(data, offset, offset + len));
+		}
+	}
 
 	/**
 	 * Register the callback invoked with raw incoming bytes as they arrive (not necessarily

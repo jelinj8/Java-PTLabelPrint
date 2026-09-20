@@ -157,6 +157,19 @@ public class BleTransport implements Transport {
 		}
 	}
 
+	/**
+	 * Overrides the interface default with a single round trip covering the whole transfer - see
+	 * {@link Transport#writeStream}'s own doc for why that matters over a remote-adapter link.
+	 */
+	@Override
+	public void writeStream(byte[] data, int chunkSize, long chunkDelayMs) throws IOException {
+		try {
+			peripheral.writeCharacteristicStream(channelServiceUuid, writeCharUuid, data, false, chunkSize, chunkDelayMs);
+		} catch (BleException e) {
+			throw new IOException("BLE write failed: " + e.getMessage(), e);
+		}
+	}
+
 	@Override
 	public void setRawDataListener(Consumer<byte[]> listener) {
 		this.rawDataListener = listener;
