@@ -82,4 +82,9 @@ public final class DSeriesLabelSizes {
 	public static Optional<Preset> find(String key) {
 		return TABLE.stream().filter(p -> p.getKey().equals(key)).findFirst();
 	}
+
+	/** Converts a feed-axis length in mm to whole bytes at this table's {@code PX_PER_MM} - for building a custom-length test/print beyond these presets. */
+	public static int lengthMmToWidthBytes(int lengthMm) {
+		return lengthMm * PX_PER_MM / 8;
+	}
 }

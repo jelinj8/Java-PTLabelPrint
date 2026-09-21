@@ -258,6 +258,27 @@ evidently the one that actually matters in practice on real hardware. **Fixed** 
 left as-is (still not very useful for either real family) since `discover` is the better tool now,
 not because the underlying gap was left open.
 
+**Die-cut/gapped labels on a real Q30 are silently ignored past ~80mm - continuous mode isn't
+affected.** Confirmed via `phomemo-print-test --label 12x12 --length 150` (the `--length`/
+`--feed-dots` options exist specifically for this): a 150mm die-cut job transferred without any
+software-level error (`DSeriesPrinter.print`/`writeStream` completed normally) but printed
+nothing at all, reproducing what the user had already hit outside this CLI; the same 150mm image
+with `--continuous --feed-dots 64` (still a single job, no splitting) printed correctly as one
+continuous black bar and fed as expected. Confirmed identical over both a local BLE connection and
+this library's ESP32 remote bridge, which rules out a transport-reliability explanation (dropped
+BLE writes were the first hypothesis here - wrong). Checked against phomymo's current GitHub
+source (`constants.js`/`printer.js`/`printers.json`/`app.js`): there's no length-related constant
+or job-splitting logic anywhere in it, and `handlePrint` only ever sends one raster job per Print
+click - so this isn't a software limit either project is quietly working around. Most likely
+explanation: a real firmware/gap-sensor search-window limit specific to die-cut mode, bypassed
+entirely once gap detection is disabled (continuous mode's `1F 11 0B`). **Practical takeaway: use
+continuous media for labels longer than ~80mm, not die-cut** - no code fix needed or attempted for
+the die-cut case itself, since it looks like a real hardware constraint, not a bug. (An earlier
+version of this session explored a `DSeriesPrinter.printContinuousSegmented` - splitting a long
+continuous print into several shorter jobs - built on the untested assumption that continuous mode
+might have its own, lower ceiling; once real-hardware testing showed a single continuous job
+already works past 80mm, that method was removed as unneeded rather than kept speculatively.)
+
 `cz.bliksoft.ptlabelprint.protocol.Transport` is shared by both families - a plain
 `connect`/`disconnect`/`write(byte[])`/`setRawDataListener` contract, no per-write response-mode
 knob (tried adding one during debugging, reverted once it proved unnecessary - see "Debugging

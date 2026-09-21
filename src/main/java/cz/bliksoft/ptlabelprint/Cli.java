@@ -574,7 +574,11 @@ public class Cli implements Runnable {
 	 * hardware, presumably from the printer reinterpreting the byte stream against its own fixed
 	 * row width instead of the (too narrow) one this code declared. {@code --label} selects any of
 	 * {@link DSeriesLabelSizes}' other presets instead. This is a minimal validation pattern, not
-	 * real label creation (no image pipeline exists yet - see CLAUDE.md).
+	 * real label creation (no image pipeline exists yet - see CLAUDE.md). {@code --length} also makes
+	 * this command a diagnostic tool for label-length ceilings - see CLAUDE.md for the real one
+	 * confirmed on a Q30: die-cut/gapped labels are silently ignored past ~80mm (most likely the gap
+	 * sensor's search window), but a single continuous-mode job at the same length prints fine - so
+	 * long labels need continuous media, not a software workaround.
 	 */
 	@Command(name = "phomemo-print-test",
 			description = "Print a small test pattern to a Phomemo d-series printer (D30/D35/D50/Q30/Q30S). Uses real consumables.")
@@ -598,6 +602,15 @@ public class Cli implements Runnable {
 						+ "22x12, 12x12, 30x14, 22x14, 40x15, 30x15 (from phomymo's own D_SERIES_LABEL_SIZES).")
 		String label = "12x12";
 
+		@Option(names = "--length",
+				description = "Override the label preset's feed-axis length, in mm (printhead-axis height stays the preset's own). "
+						+ "For building test prints longer than any preset, e.g. to probe a single-job length ceiling.")
+		Integer lengthMm;
+
+		@Option(names = "--feed-dots",
+				description = "Extra feed in dots after the cut point, continuous mode only (default: ${DEFAULT-VALUE}).")
+		int feedDots = 0;
+
 		@Override
 		public Integer call() throws Exception {
 			Optional<DSeriesLabelSizes.Preset> preset = DSeriesLabelSizes.find(label);
@@ -606,6 +619,9 @@ public class Cli implements Runnable {
 						+ DSeriesLabelSizes.all().stream().map(DSeriesLabelSizes.Preset::getKey).collect(Collectors.joining(", ")));
 				return 1;
 			}
+
+			int widthBytes = lengthMm != null ? DSeriesLabelSizes.lengthMmToWidthBytes(lengthMm) : preset.get().getWidthBytes();
+			int heightLines = preset.get().getHeightLines();
 
 			try (BleAdapter adapter = new BleAdapter()) {
 				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
@@ -620,11 +636,12 @@ public class Cli implements Runnable {
 				transport.connect();
 
 				try {
-					RasterImage image = buildTestPattern(preset.get());
+					RasterImage image = buildTestPattern(widthBytes, heightLines);
 					System.out.println("Printing " + (image.getWidthBytes() * 8) + "x" + image.getHeightLines()
-							+ "px test pattern (label=" + label + ", density=" + density + ", continuous=" + continuous + ")...");
+							+ "px test pattern (label=" + label + ", density=" + density + ", continuous=" + continuous
+							+ ", feedDots=" + feedDots + ")...");
 
-					DSeriesPrinter.print(transport, image, density, continuous, 0,
+					DSeriesPrinter.print(transport, image, density, continuous, feedDots,
 							pct -> System.out.print("\rSending: " + pct + "%  "));
 
 					System.out.println();
@@ -636,11 +653,8 @@ public class Cli implements Runnable {
 			return 0;
 		}
 
-		/** A solid black square/rectangle with an 8px white margin, so a working print shows a clearly visible block, not just "something happened". */
-		private static RasterImage buildTestPattern(DSeriesLabelSizes.Preset preset) {
-			int widthBytes = preset.getWidthBytes(); // the label's length axis (pre-rotation width)
-			int heightLines = preset.getHeightLines(); // the label's printhead-width axis (pre-rotation height) -
-														// becomes the physical dot-width after rotation
+		/** A solid black rectangle with an 8px white margin, so a working print shows a clearly visible block, not just "something happened". */
+		private static RasterImage buildTestPattern(int widthBytes, int heightLines) {
 			byte[] data = new byte[widthBytes * heightLines];
 
 			for (int row = 8; row < heightLines - 8; row++) {
