@@ -4,24 +4,36 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Callable;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import javax.imageio.ImageIO;
 
 import cz.bliksoft.javautils.ble.BleAdapter;
 import cz.bliksoft.javautils.ble.BleCharacteristic;
+import cz.bliksoft.javautils.ble.BleException;
 import cz.bliksoft.javautils.ble.BlePeripheral;
 import cz.bliksoft.javautils.ble.BleService;
 import cz.bliksoft.javautils.ble.ScanFilter;
+import cz.bliksoft.javautils.ble.remote.DefaultRemoteAdapterRegistry;
+import cz.bliksoft.javautils.ble.remote.RemoteAdapterRegistry;
+import cz.bliksoft.javautils.ble.remote.RemoteAdapterServer;
+import cz.bliksoft.javautils.ble.transport.BleLinePipe;
 import cz.bliksoft.javautils.ble.utils.BleUtils;
+import cz.bliksoft.ptlabelprint.image.BufferedImagePixelSource;
 import cz.bliksoft.ptlabelprint.image.PixelSource;
 import cz.bliksoft.ptlabelprint.image.PrinterCapabilities;
 import cz.bliksoft.ptlabelprint.printer.PrintJob;
 import cz.bliksoft.ptlabelprint.printer.Rotation;
 import cz.bliksoft.ptlabelprint.protocol.BleTransport;
+import cz.bliksoft.ptlabelprint.protocol.SerialTransport;
+import cz.bliksoft.ptlabelprint.protocol.Transport;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.AbstractNiimbotPrintTask;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.B1PrintTask;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.D110V4PrintTask;
@@ -41,9 +53,11 @@ import cz.bliksoft.ptlabelprint.protocol.niimbot.RfidInfo;
 import cz.bliksoft.ptlabelprint.protocol.niimbot.SoundSettingsItemType;
 import cz.bliksoft.ptlabelprint.protocol.phomemo.DSeriesLabelSizes;
 import cz.bliksoft.ptlabelprint.protocol.phomemo.DSeriesPrinter;
+import cz.bliksoft.ptlabelprint.protocol.phomemo.M110Printer;
 import cz.bliksoft.ptlabelprint.protocol.phomemo.RasterImage;
 import cz.bliksoft.ptlabelprint.printer.LabelPrinter;
 import cz.bliksoft.ptlabelprint.printer.NiimbotLabelPrinter;
+import cz.bliksoft.ptlabelprint.printer.PhomemoM110LabelPrinter;
 import cz.bliksoft.ptlabelprint.printer.PrinterCatalog;
 import cz.bliksoft.ptlabelprint.printer.PrinterDefinition;
 import cz.bliksoft.ptlabelprint.printer.PrinterFactory;
@@ -67,13 +81,115 @@ import picocli.CommandLine.Parameters;
 		subcommands = {Cli.ScanCommand.class, Cli.InfoCommand.class, Cli.MediaCommand.class,
 				Cli.NiimbotCalibrateCommand.class, Cli.NiimbotSetTimeCommand.class, Cli.NiimbotFirmwareUpgradeCommand.class,
 				Cli.RawCommand.class, Cli.GattCommand.class, Cli.PhomemoPrintTestCommand.class,
+				Cli.PhomemoM110PrintTestCommand.class,
 				Cli.NiimbotPrintTestCommand.class, Cli.DiscoverCommand.class, Cli.ConnectCommand.class,
-				Cli.PrintTestCommand.class})
+				Cli.PrintTestCommand.class, Cli.PortsCommand.class})
 public class Cli implements Runnable {
 
 	public static void main(String[] args) {
-		int exitCode = new CommandLine(new Cli()).execute(args);
+		root = new Cli();
+		int exitCode;
+		try {
+			exitCode = new CommandLine(root).execute(args);
+		} finally {
+			if (bridgeServer != null) {
+				bridgeServer.close();
+			}
+		}
 		System.exit(exitCode);
+	}
+
+	/** The instance {@link #main} parsed the command line into - where the inherited {@code --bridge-*} options land. */
+	private static Cli root;
+	private static RemoteAdapterServer bridgeServer;
+
+	@Option(names = "--bridge-port", scope = CommandLine.ScopeType.INHERIT, defaultValue = "${env:PTLABELPRINT_BRIDGE_PORT}",
+			description = "Use a remote BLE bridge (e.g. the ESP32 firmware-BSBleRemoteBridge) instead of this machine's own "
+					+ "Bluetooth adapter: listen on this TCP port for the bridge to dial in (ws://<this host>:<port>/ble-remote), "
+					+ "then run the command through it. Env: PTLABELPRINT_BRIDGE_PORT.")
+	Integer bridgePort;
+
+	@Option(names = "--bridge-token", scope = CommandLine.ScopeType.INHERIT, defaultValue = "${env:PTLABELPRINT_BRIDGE_TOKEN}",
+			description = "Bearer token the bridge must present - required with --bridge-port. "
+					+ "Env: PTLABELPRINT_BRIDGE_TOKEN (preferred, keeps it out of the process list).")
+	String bridgeToken;
+
+	@Option(names = "--bridge-name", scope = CommandLine.ScopeType.INHERIT, defaultValue = "${env:PTLABELPRINT_BRIDGE_NAME}",
+			description = "Only accept the bridge with this channel name (default: the first one that connects). "
+					+ "Env: PTLABELPRINT_BRIDGE_NAME.")
+	String bridgeName;
+
+	@Option(names = "--bridge-wait", scope = CommandLine.ScopeType.INHERIT,
+			description = "How long to wait for the bridge to dial in, in ms (default: ${DEFAULT-VALUE}).")
+	long bridgeWaitMs = 60000;
+
+	/**
+	 * The BLE adapter every subcommand runs on: this machine's own, or - with {@code --bridge-port} -
+	 * one backed by a remote bridge that dials in to a {@link RemoteAdapterServer} this process hosts
+	 * for the duration of the command. The bridge is the WebSocket <em>client</em>, so there is nothing
+	 * to connect to until it (re)dials; this blocks until it does, up to {@code --bridge-wait}.
+	 */
+	static BleAdapter openAdapter() throws Exception {
+		Cli cli = root;
+		if (cli == null || cli.bridgePort == null) {
+			return new BleAdapter();
+		}
+		if (cli.bridgeToken == null || cli.bridgeToken.trim().isEmpty()) {
+			// RemoteAdapterServer answers 401 to everything without an expected token, and the ESP32
+			// firmware stops retrying after a 401 until it's restarted - fail here instead.
+			throw new IllegalArgumentException("--bridge-port needs --bridge-token (or PTLABELPRINT_BRIDGE_TOKEN).");
+		}
+
+		String wantedName = cli.bridgeName != null && !cli.bridgeName.trim().isEmpty() ? cli.bridgeName.trim() : null;
+		DefaultRemoteAdapterRegistry registry = new DefaultRemoteAdapterRegistry();
+		BlockingQueue<String> connected = new LinkedBlockingQueue<>();
+
+		// Same registry underneath - this wrapper only reports which name dialed in, since the
+		// registry itself has no way to wait for or list registrations.
+		RemoteAdapterRegistry announcing = new RemoteAdapterRegistry() {
+			@Override
+			public void register(String name, BleLinePipe pipe) {
+				registry.register(name, pipe);
+				connected.add(name);
+			}
+
+			@Override
+			public void unregister(String name) {
+				registry.unregister(name);
+			}
+
+			@Override
+			public BleAdapter adapterFor(String name) throws BleException {
+				return registry.adapterFor(name);
+			}
+
+			@Override
+			public void requestNewSession(String name) throws BleException {
+				registry.requestNewSession(name);
+			}
+		};
+
+		bridgeServer = new RemoteAdapterServer(cli.bridgePort, cli.bridgeToken, announcing);
+		bridgeServer.start();
+		System.err.println("Waiting for BLE bridge" + (wantedName != null ? " '" + wantedName + "'" : "") + " on port "
+				+ bridgeServer.getLocalPort() + " (up to " + cli.bridgeWaitMs + " ms)...");
+
+		long deadline = System.currentTimeMillis() + cli.bridgeWaitMs;
+		while (true) {
+			long remaining = deadline - System.currentTimeMillis();
+			String name = remaining > 0 ? connected.poll(remaining, TimeUnit.MILLISECONDS) : null;
+			if (name == null) {
+				throw new IOException("No BLE bridge dialed in within " + cli.bridgeWaitMs + " ms - check that its server URL is"
+						+ " ws://<this host>:" + bridgeServer.getLocalPort() + "/ble-remote, its token matches, and this"
+						+ " port is reachable (firewall).");
+			}
+			if (wantedName != null && !wantedName.equals(name)) {
+				System.err.println("Ignoring bridge '" + name + "' (waiting for '" + wantedName + "').");
+				continue;
+			}
+			System.err.println("BLE bridge '" + name + "' connected.");
+			return registry.adapterFor(name);
+		}
 	}
 
 	/**
@@ -92,6 +208,33 @@ public class Cli implements Runnable {
 		}
 	}
 
+	/**
+	 * An asymmetric alignment pattern: a thin outline one {@code unit} inside the edge plus an "L"
+	 * marker (bar along the left edge, bar along the bottom edge, square near the top-right corner),
+	 * so a single print shows orientation, offset and any cropping at once. {@code unit} is 1mm in
+	 * pixels at the target printer's resolution.
+	 */
+	static BufferedImage buildAlignmentPattern(int width, int height, int unit) {
+		BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+		Graphics2D g = img.createGraphics();
+		try {
+			g.setColor(Color.WHITE);
+			g.fillRect(0, 0, width, height);
+			g.setColor(Color.BLACK);
+
+			int m = Math.max(unit, 1);
+			for (int i = 0; i < 2; i++) {
+				g.drawRect(m + i, m + i, width - 2 * (m + i) - 1, height - 2 * (m + i) - 1);
+			}
+			g.fillRect(2 * m, 2 * m, m, height - 4 * m);
+			g.fillRect(2 * m, height - 3 * m, width - 4 * m, m);
+			g.fillRect(width - 4 * m, 2 * m, 2 * m, 2 * m);
+		} finally {
+			g.dispose();
+		}
+		return img;
+	}
+
 	@Override
 	public void run() {
 		System.out.println("ptlabelprint-cli: pass a subcommand (scan, info) or --help.");
@@ -105,7 +248,7 @@ public class Cli implements Runnable {
 
 		@Override
 		public Integer call() throws Exception {
-			try (BleAdapter adapter = new BleAdapter()) {
+			try (BleAdapter adapter = openAdapter()) {
 				List<BleUtils.BleDeviceResult> results = BleUtils.scan(adapter, BleTransport.scanFilter(), timeoutMs);
 
 				if (results.isEmpty()) {
@@ -137,7 +280,7 @@ public class Cli implements Runnable {
 
 		@Override
 		public Integer call() throws Exception {
-			try (BleAdapter adapter = new BleAdapter()) {
+			try (BleAdapter adapter = openAdapter()) {
 				// BSToolbox-BLE requires an address to have been seen by scan() on this same
 				// adapter before connect() will work on it - see BlePeripheral's javadoc.
 				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
@@ -179,7 +322,7 @@ public class Cli implements Runnable {
 
 		@Override
 		public Integer call() throws Exception {
-			try (BleAdapter adapter = new BleAdapter()) {
+			try (BleAdapter adapter = openAdapter()) {
 				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
 
 				if (found.isEmpty()) {
@@ -260,7 +403,7 @@ public class Cli implements Runnable {
 
 		@Override
 		public Integer call() throws Exception {
-			try (BleAdapter adapter = new BleAdapter()) {
+			try (BleAdapter adapter = openAdapter()) {
 				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
 
 				if (found.isEmpty()) {
@@ -299,7 +442,7 @@ public class Cli implements Runnable {
 
 		@Override
 		public Integer call() throws Exception {
-			try (BleAdapter adapter = new BleAdapter()) {
+			try (BleAdapter adapter = openAdapter()) {
 				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
 
 				if (found.isEmpty()) {
@@ -363,7 +506,7 @@ public class Cli implements Runnable {
 			byte[] firmwareData = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(firmwareFile));
 			System.out.println("Loaded " + firmwareData.length + " bytes from " + firmwareFile + ".");
 
-			try (BleAdapter adapter = new BleAdapter()) {
+			try (BleAdapter adapter = openAdapter()) {
 				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
 
 				if (found.isEmpty()) {
@@ -431,9 +574,18 @@ public class Cli implements Runnable {
 				+ "(tests whether the response is synchronous-read rather than pushed via NOTIFY).")
 		String readCharUuid;
 
+		@Option(names = "--pair", arity = "0..1", fallbackValue = "", paramLabel = "PIN",
+				description = "Pair/bond with the device right after connecting, before any GATT access (optionally "
+						+ "supplying a PIN/passkey) - for a device whose characteristics reject unauthenticated access.")
+		String pairPin;
+
+		@Option(names = "--no-subscribe", description = "Skip subscribing to the notify characteristic (isolates which "
+				+ "GATT operation a device rejects). An empty hex argument (\"\") likewise skips the write.")
+		boolean noSubscribe;
+
 		@Override
 		public Integer call() throws Exception {
-			try (BleAdapter adapter = new BleAdapter()) {
+			try (BleAdapter adapter = openAdapter()) {
 				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
 
 				if (found.isEmpty()) {
@@ -445,6 +597,11 @@ public class Cli implements Runnable {
 				peripheral.connect();
 
 				try {
+					if (pairPin != null) {
+						peripheral.pair(pairPin);
+						System.out.println("Paired.");
+					}
+
 					String svc = serviceUuid;
 					String writeChar = writeCharUuid;
 					String notifyChar = notifyCharUuid;
@@ -479,17 +636,21 @@ public class Cli implements Runnable {
 					System.out.println("Using service=" + svc + " write=" + writeChar + " notify=" + notifyChar
 							+ " withResponse=" + withResponse);
 
-					peripheral.subscribe(svc, notifyChar, (charUuid, value) -> {
-						StringBuilder sb = new StringBuilder();
-						for (byte b : value) {
-							sb.append(String.format("%02x ", b & 0xff));
-						}
-						System.out.println("RX " + sb.toString().trim());
-					});
+					if (!noSubscribe) {
+						peripheral.subscribe(svc, notifyChar, (charUuid, value) -> {
+							StringBuilder sb = new StringBuilder();
+							for (byte b : value) {
+								sb.append(String.format("%02x ", b & 0xff));
+							}
+							System.out.println("RX " + sb.toString().trim());
+						});
+					}
 
 					byte[] bytes = hexToBytes(hex);
-					System.out.println("TX " + hex.replaceAll("\\s", ""));
-					peripheral.writeCharacteristic(svc, writeChar, bytes, withResponse);
+					if (bytes.length > 0) {
+						System.out.println("TX " + hex.replaceAll("\\s", ""));
+						peripheral.writeCharacteristic(svc, writeChar, bytes, withResponse);
+					}
 					Thread.sleep(listenMs);
 
 					if (readCharUuid != null) {
@@ -536,7 +697,7 @@ public class Cli implements Runnable {
 
 		@Override
 		public Integer call() throws Exception {
-			try (BleAdapter adapter = new BleAdapter()) {
+			try (BleAdapter adapter = openAdapter()) {
 				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
 
 				if (found.isEmpty()) {
@@ -623,7 +784,7 @@ public class Cli implements Runnable {
 			int widthBytes = lengthMm != null ? DSeriesLabelSizes.lengthMmToWidthBytes(lengthMm) : preset.get().getWidthBytes();
 			int heightLines = preset.get().getHeightLines();
 
-			try (BleAdapter adapter = new BleAdapter()) {
+			try (BleAdapter adapter = openAdapter()) {
 				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
 
 				if (found.isEmpty()) {
@@ -668,6 +829,86 @@ public class Cli implements Runnable {
 	}
 
 	/**
+	 * Prints an asymmetric alignment pattern via {@link M110Printer} (Phomemo's {@code m110}
+	 * protocol - M110/M110S/M120, and the M421). Uses real consumables. The image is sent at the
+	 * label's own size (8px/mm at 203 DPI), not the printhead's - a thin outline 1mm inside the label
+	 * edge plus an "L" marker (bar along the left edge, bar along the bottom edge, dot near the
+	 * top-right corner), so a single print shows orientation, offset across the printhead, and any
+	 * cropping at once rather than just "something came out".
+	 */
+	@Command(name = "phomemo-m110-print-test",
+			description = "Print an alignment test pattern to a Phomemo m110-protocol printer (M110/M120/M421). Uses real consumables.")
+	static class PhomemoM110PrintTestCommand implements Callable<Integer> {
+
+		private static final int DOTS_PER_MM = 8;
+
+		@Parameters(index = "0", description = "BLE address of the printer (see 'discover').")
+		String address;
+
+		@Option(names = {"-t", "--scan-timeout"},
+				description = "How long to scan for the address before connecting, in ms (default: ${DEFAULT-VALUE}).")
+		long scanTimeoutMs = 5000;
+
+		@Option(names = {"-d", "--density"}, description = "Print density 1-8 (default: ${DEFAULT-VALUE}).")
+		int density = 4;
+
+		@Option(names = "--continuous", description = "Continuous media instead of die-cut/gap labels.")
+		boolean continuous;
+
+		@Option(names = "--width-mm", description = "Label width (across the printhead) in mm (default: ${DEFAULT-VALUE}).")
+		int widthMm = 40;
+
+		@Option(names = "--height-mm", description = "Label height (feed direction) in mm (default: ${DEFAULT-VALUE}).")
+		int heightMm = 20;
+
+		@Option(names = {"-v", "--debug"}, description = "Log every notification the printer sends, with a timestamp, to stderr.")
+		boolean debug;
+
+		@Override
+		public Integer call() throws Exception {
+			try (BleAdapter adapter = openAdapter()) {
+				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
+
+				if (found.isEmpty()) {
+					System.err.println("Device " + address + " not found during scan (run 'discover' first to confirm the address).");
+					return 1;
+				}
+
+				BlePeripheral peripheral = found.get(0).getPeripheral(adapter);
+				BleTransport transport = new BleTransport(peripheral);
+				M110Printer.LinkInfo linkInfo = M110Printer.listenForLinkInfo(transport);
+				transport.connect();
+
+				try {
+					RasterImage image = RasterImage.fromPixelSource(
+							new BufferedImagePixelSource(buildAlignmentPattern(widthMm * DOTS_PER_MM, heightMm * DOTS_PER_MM, DOTS_PER_MM)));
+					System.out.println("Printing " + (image.getWidthBytes() * 8) + "x" + image.getHeightLines()
+							+ "px alignment pattern (" + widthMm + "x" + heightMm + "mm, density=" + density
+							+ ", continuous=" + continuous + ")...");
+
+					long start = System.currentTimeMillis();
+					boolean finished = M110Printer.print(transport, image, density, continuous, null, linkInfo, !debug ? null : data -> {
+						StringBuilder sb = new StringBuilder();
+						for (byte b : data) {
+							sb.append(String.format("%02x ", b & 0xff));
+						}
+						System.err.println(String.format("%6d ms RX %s", System.currentTimeMillis() - start, sb.toString().trim()));
+					});
+					if (debug) {
+						System.err.println("Link info: initialCredits=" + linkInfo.getInitialCredits() + ", maxPayload="
+								+ linkInfo.getMaxPayload() + "; data sent in " + (System.currentTimeMillis() - start) + " ms incl. wait");
+					}
+					System.out.println(finished ? "Done - printer reported the job finished."
+							: "Sent, but the printer did not report the job finished in time.");
+				} finally {
+					transport.disconnect();
+				}
+			}
+			return 0;
+		}
+	}
+
+	/**
 	 * Prints a small validation test pattern, dispatching to whichever print task
 	 * {@link NiimbotPrintTasks} assigns to the connected model/protocol-version. Uses real
 	 * consumables. Only D11_H ({@link D110V4PrintTask}) and M2_H ({@link B1PrintTask}) are actually
@@ -701,7 +942,7 @@ public class Cli implements Runnable {
 
 		@Override
 		public Integer call() throws Exception {
-			try (BleAdapter adapter = new BleAdapter()) {
+			try (BleAdapter adapter = openAdapter()) {
 				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
 
 				if (found.isEmpty()) {
@@ -779,7 +1020,7 @@ public class Cli implements Runnable {
 
 		@Override
 		public Integer call() throws Exception {
-			try (BleAdapter adapter = new BleAdapter()) {
+			try (BleAdapter adapter = openAdapter()) {
 				List<BleUtils.BleDeviceResult> results = BleUtils.scan(adapter, timeoutMs);
 
 				if (results.isEmpty()) {
@@ -826,8 +1067,11 @@ public class Cli implements Runnable {
 
 		@Override
 		public Integer call() throws Exception {
-			try (BleAdapter adapter = new BleAdapter()) {
-				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
+			try (BleAdapter adapter = openAdapter()) {
+				// requireName(): family detection below needs the advertised name, which some devices
+				// (confirmed: Phomemo Q30, M421) only send in a later packet than the first one seen.
+				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address).requireName(),
+						scanTimeoutMs);
 
 				if (found.isEmpty()) {
 					System.err.println("Device " + address + " not found during scan (run 'discover' first to confirm the address).");
@@ -875,6 +1119,22 @@ public class Cli implements Runnable {
 	}
 
 	/**
+	 * Lists the serial ports {@code print-test --serial} can be pointed at - including the COM ports
+	 * an OS creates for a paired classic-Bluetooth device's Serial Port Profile.
+	 */
+	@Command(name = "ports", description = "List serial ports usable with print-test --serial.")
+	static class PortsCommand implements Callable<Integer> {
+
+		@Override
+		public Integer call() {
+			for (com.fazecast.jSerialComm.SerialPort port : com.fazecast.jSerialComm.SerialPort.getCommPorts()) {
+				System.out.println(port.getSystemPortName() + "\t" + port.getDescriptivePortName() + "\t" + port.getPortDescription());
+			}
+			return 0;
+		}
+	}
+
+	/**
 	 * Exercises the manufacturer-agnostic {@link LabelPrinter#print(BufferedImage, PrintJob)}
 	 * surface end to end, regardless of which family {@code --address} turns out to be: detect via
 	 * {@link PrinterCatalog}, connect via {@link PrinterFactory}, print {@link PrinterCapabilities},
@@ -886,8 +1146,20 @@ public class Cli implements Runnable {
 			description = "Print a BufferedImage through the unified LabelPrinter.print(BufferedImage, PrintJob) abstraction, regardless of printer family. Uses real consumables.")
 	static class PrintTestCommand implements Callable<Integer> {
 
-		@Parameters(index = "0", description = "BLE address of the printer (see 'discover').")
+		@Parameters(index = "0", arity = "0..1", description = "BLE address of the printer (see 'discover'). Omit with --serial.")
 		String address;
+
+		@Option(names = "--serial", paramLabel = "PORT",
+				description = "Print over a serial port instead of BLE, e.g. the COM port of a paired classic-Bluetooth "
+						+ "printer (see 'ports'). Needs --model.")
+		String serialPort;
+
+		@Option(names = "--baud", description = "Baud rate for --serial (default: ${DEFAULT-VALUE}; ignored by Bluetooth/USB ports).")
+		int baud = 115200;
+
+		@Option(names = "--model", paramLabel = "NAME",
+				description = "Printer model for --serial, where there is no advertised name to detect it from, e.g. M421.")
+		String model;
 
 		@Option(names = {"-t", "--scan-timeout"},
 				description = "How long to scan for the address before connecting, in ms (default: ${DEFAULT-VALUE}).")
@@ -911,6 +1183,30 @@ public class Cli implements Runnable {
 				description = "Image file to print (any format ImageIO can read). Default: a synthetic solid-square test pattern.")
 		File image;
 
+		@Option(names = "--side-gap-mm",
+				description = "Extra side gap of the loaded label in mm: moves the print that much further in from the edge "
+						+ "the printer aligns media to (m110 family only; default: none).")
+		Double sideGapMm;
+
+		@Option(names = "--top-offset-mm",
+				description = "Move the image along the feed direction, in mm: positive starts it later, negative earlier "
+						+ "(m110 family only; default: ${DEFAULT-VALUE}).")
+		double topOffsetMm = 0;
+
+		@Option(names = "--top-offset-changes-length",
+				description = "With --top-offset-mm: make the job longer/shorter by the offset instead of keeping its length "
+						+ "and cutting off what is pushed past the end.")
+		boolean topOffsetChangesLength;
+
+		@Option(names = {"-p", "--pattern-mm"}, paramLabel = "WIDTHxHEIGHT",
+				description = "Print a generated alignment pattern of this size in mm, e.g. 40x20 (outline, bar on the left, "
+						+ "bar along the bottom, square top-right), rendered at the connected printer's own DPI. "
+						+ "Mutually exclusive with --image.")
+		String patternMm;
+
+		@Option(names = {"-v", "--debug"}, description = "Log raw TX/RX packet bytes to stderr (Niimbot only).")
+		boolean debug;
+
 		@Override
 		public Integer call() throws Exception {
 			Rotation parsedRotation = parseRotation(rotation);
@@ -919,8 +1215,41 @@ public class Cli implements Runnable {
 				return 1;
 			}
 
-			try (BleAdapter adapter = new BleAdapter()) {
-				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address), scanTimeoutMs);
+			double[] patternSizeMm = null;
+			if (patternMm != null) {
+				if (image != null) {
+					System.err.println("--image and --pattern-mm are mutually exclusive.");
+					return 1;
+				}
+				patternSizeMm = parseSizeMm(patternMm);
+				if (patternSizeMm == null) {
+					System.err.println("Invalid --pattern-mm \"" + patternMm + "\" - expected WIDTHxHEIGHT in mm, e.g. 40x20.");
+					return 1;
+				}
+			}
+
+			if (serialPort != null) {
+				if (model == null) {
+					System.err.println("--serial needs --model (e.g. --model M421): there is no advertised name to detect the printer from.");
+					return 1;
+				}
+				PrinterDefinition definition = resolveDefinition(model);
+				if (definition == null) {
+					return 1;
+				}
+				return printWith(definition, new SerialTransport(serialPort, baud), parsedRotation, patternSizeMm);
+			}
+
+			if (address == null) {
+				System.err.println("Pass the printer's BLE address, or --serial with --model.");
+				return 1;
+			}
+
+			try (BleAdapter adapter = openAdapter()) {
+				// requireName(): family detection below needs the advertised name, which some devices
+				// (confirmed: Phomemo Q30, M421) only send in a later packet than the first one seen.
+				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address).requireName(),
+						scanTimeoutMs);
 
 				if (found.isEmpty()) {
 					System.err.println("Device " + address + " not found during scan (run 'discover' first to confirm the address).");
@@ -928,57 +1257,105 @@ public class Cli implements Runnable {
 				}
 
 				BleUtils.BleDeviceResult result = found.get(0);
-				List<PrinterDefinition> matches = PrinterCatalog.detect(result.getName());
-
-				if (matches.isEmpty()) {
-					System.err.println("Could not detect a known printer family from name \"" + result.getName() + "\".");
+				PrinterDefinition definition = resolveDefinition(result.getName());
+				if (definition == null) {
 					return 1;
 				}
-				if (matches.size() > 1) {
-					System.err.println("Ambiguous match for name \"" + result.getName() + "\": " + matches);
+				return printWith(definition, new BleTransport(result.getPeripheral(adapter)), parsedRotation, patternSizeMm);
+			}
+		}
+
+		/** The single catalog entry {@code name} resolves to, or {@code null} (after saying why) if there isn't exactly one. */
+		private static PrinterDefinition resolveDefinition(String name) {
+			List<PrinterDefinition> matches = PrinterCatalog.detect(name);
+			if (matches.isEmpty()) {
+				System.err.println("Could not detect a known printer family from name \"" + name + "\".");
+				return null;
+			}
+			if (matches.size() > 1) {
+				System.err.println("Ambiguous match for name \"" + name + "\": " + matches);
+				return null;
+			}
+			System.out.println("Detected: " + matches.get(0));
+			return matches.get(0);
+		}
+
+		private Integer printWith(PrinterDefinition definition, Transport transport, Rotation parsedRotation,
+				double[] patternSizeMm) throws Exception {
+			LabelPrinter printer;
+			try {
+				printer = PrinterFactory.create(definition, transport);
+			} catch (UnimplementedPrinterFamilyException e) {
+				System.err.println("Detected as " + definition + ", but that family isn't implemented yet.");
+				return 1;
+			}
+
+			try (LabelPrinter p = printer) {
+				if (debug && p instanceof NiimbotLabelPrinter) {
+					((NiimbotLabelPrinter) p).getDevice().setDebug(true);
+				}
+				p.connect();
+				System.out.println("Connected.");
+
+				PrinterCapabilities capabilities = p.getCapabilities();
+				System.out.println("Capabilities: " + capabilities);
+
+				// The default pattern is a printhead-sized square - fine where the media is as wide as
+				// the printhead, but an m110-family printhead (e.g. the M421's ~100mm) is usually far
+				// wider than the loaded label, so it would print straight off the label's edge.
+				if (image == null && patternSizeMm == null && p instanceof PhomemoM110LabelPrinter) {
+					System.err.println("This printer's printhead is wider than most of its media - pass --pattern-mm or"
+							+ " --image sized to the loaded label.");
 					return 1;
 				}
 
-				PrinterDefinition definition = matches.get(0);
-				System.out.println("Detected: " + definition);
-
-				LabelPrinter printer;
-				try {
-					printer = PrinterFactory.create(definition, new BleTransport(result.getPeripheral(adapter)));
-				} catch (UnimplementedPrinterFamilyException e) {
-					System.err.println("Detected as " + definition + ", but that family isn't implemented yet.");
+				BufferedImage img;
+				if (patternSizeMm != null) {
+					double dotsPerMm = capabilities.getDpi() / 25.4;
+					img = buildAlignmentPattern((int) Math.round(patternSizeMm[0] * dotsPerMm),
+							(int) Math.round(patternSizeMm[1] * dotsPerMm), (int) Math.round(dotsPerMm));
+				} else {
+					img = image != null ? ImageIO.read(image) : buildTestPattern(capabilities.getPrintheadPixels());
+				}
+				if (img == null) {
+					System.err.println("Could not read image file: " + image);
 					return 1;
 				}
 
-				try (LabelPrinter p = printer) {
-					p.connect();
-					System.out.println("Connected.");
+				PrintJob job = new PrintJob()
+						.setCopies(copies)
+						.setContinuousMedia(continuous)
+						.setDensity(density)
+						.setMediaSideGapMm(sideGapMm)
+						.setTopOffsetMm(topOffsetMm)
+						.setTopOffsetKeepsLength(!topOffsetChangesLength)
+						.setRotation(parsedRotation);
 
-					PrinterCapabilities capabilities = p.getCapabilities();
-					System.out.println("Capabilities: " + capabilities);
+				System.out.println("Printing " + img.getWidth() + "x" + img.getHeight() + "px (copies=" + copies
+						+ ", continuous=" + continuous + ", density=" + (density != null ? density : "default")
+						+ ", rotation=" + parsedRotation + ")...");
 
-					BufferedImage img = image != null ? ImageIO.read(image) : buildTestPattern(capabilities.getPrintheadPixels());
-					if (img == null) {
-						System.err.println("Could not read image file: " + image);
-						return 1;
-					}
+				long start = System.currentTimeMillis();
+				p.print(img, job);
 
-					PrintJob job = new PrintJob()
-							.setCopies(copies)
-							.setContinuousMedia(continuous)
-							.setDensity(density)
-							.setRotation(parsedRotation);
-
-					System.out.println("Printing " + img.getWidth() + "x" + img.getHeight() + "px (copies=" + copies
-							+ ", continuous=" + continuous + ", density=" + (density != null ? density : "default")
-							+ ", rotation=" + parsedRotation + ")...");
-
-					p.print(img, job);
-
-					System.out.println("Done.");
-				}
+				System.out.println("Done in " + (System.currentTimeMillis() - start) + " ms.");
 			}
 			return 0;
+		}
+
+		/** {@code "40x20"} -> {@code {40, 20}}; {@code null} if it isn't two positive numbers separated by {@code x}. */
+		static double[] parseSizeMm(String value) {
+			String[] parts = value.toLowerCase().split("x");
+			if (parts.length != 2) {
+				return null;
+			}
+			try {
+				double w = Double.parseDouble(parts[0].trim());
+				double h = Double.parseDouble(parts[1].trim());
+				return w > 0 && h > 0 ? new double[] {w, h} : null;
+			} catch (NumberFormatException e) {
+				return null;
+			}
 		}
 
 		private static Rotation parseRotation(String value) {
