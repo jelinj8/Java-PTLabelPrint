@@ -42,6 +42,9 @@ public class NiimbotDevice {
 	private volatile List<ResponseCommandId> awaitedIds;
 	private byte[] packetBuf = new byte[0];
 	private long packetTimeoutMs = DEFAULT_PACKET_TIMEOUT_MS;
+	/** How long unchanged progress values on the last page are taken to mean "this model doesn't report progress". */
+	private static final long PROGRESS_SETTLE_MS = 3000;
+
 	private volatile boolean debug;
 
 	// --- firmware-upgrade-only state (see #firmwareUpgrade) - a separate raw-data pipeline from
@@ -361,20 +364,41 @@ public class NiimbotDevice {
 	}
 
 	/**
-	 * Polls {@link #getPrintStatus()} every {@code pollIntervalMs} until {@code page == pagesToPrint}.
-	 * Ported from niimbluelib's {@code waitUntilPrintFinishedByStatusPoll} - simplified to plain
-	 * blocking (this is a synchronous library), so unlike niimbluelib this has no
-	 * {@code printprogress} event; the caller can inspect {@link PrintStatus} itself each poll if
-	 * it wants progress.
+	 * Polls {@link #getPrintStatus()} every {@code pollIntervalMs} until {@code page == pagesToPrint}
+	 * <em>and</em> that last page's print and feed progress both read 100. Ported from niimbluelib's
+	 * {@code waitUntilPrintFinishedByStatusPoll} - simplified to plain blocking (this is a synchronous
+	 * library), so unlike niimbluelib this has no {@code printprogress} event; the caller can inspect
+	 * {@link PrintStatus} itself each poll if it wants progress.
+	 *
+	 * <p>
+	 * <b>The progress condition is a deliberate deviation from niimbluelib</b>, which stops at
+	 * {@code page == pagesToPrint} alone. That's enough for an app that stays connected afterwards,
+	 * but a caller that disconnects as soon as this returns can cut the label short - seen on a real
+	 * M2_H printed through a remote bridge whose link dropped right after the job. In case a model
+	 * never reports progress at all, the wait also ends once the progress values have stopped changing
+	 * for {@value #PROGRESS_SETTLE_MS} ms, rather than running into the overall timeout.
 	 */
 	public void waitUntilPrintFinishedByStatusPoll(int pagesToPrint, long pollIntervalMs, long overallTimeoutMs)
 			throws IOException, TimeoutException {
 		long deadline = System.currentTimeMillis() + overallTimeoutMs;
+		int lastPrintProgress = -1;
+		int lastFeedProgress = -1;
+		long lastProgressChange = 0;
 
 		while (true) {
 			PrintStatus status = getPrintStatus();
 			if (status.getPage() == pagesToPrint) {
-				return;
+				if (status.getPagePrintProgress() >= 100 && status.getPageFeedProgress() >= 100) {
+					return;
+				}
+				long now = System.currentTimeMillis();
+				if (status.getPagePrintProgress() != lastPrintProgress || status.getPageFeedProgress() != lastFeedProgress) {
+					lastPrintProgress = status.getPagePrintProgress();
+					lastFeedProgress = status.getPageFeedProgress();
+					lastProgressChange = now;
+				} else if (now - lastProgressChange > PROGRESS_SETTLE_MS) {
+					return;
+				}
 			}
 			if (System.currentTimeMillis() > deadline) {
 				throw new TimeoutException("Timeout waiting for print to finish (last status: page="
