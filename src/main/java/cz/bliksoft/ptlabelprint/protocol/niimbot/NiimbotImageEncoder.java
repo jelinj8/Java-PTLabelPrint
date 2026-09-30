@@ -14,6 +14,8 @@ import cz.bliksoft.ptlabelprint.image.PixelSource;
  */
 public final class NiimbotImageEncoder {
 
+	private static final int CHECK_ROW_INTERVAL = 200;
+
 	private NiimbotImageEncoder() {
 	}
 
@@ -75,9 +77,15 @@ public final class NiimbotImageEncoder {
 					rowsData.add(newRow);
 				}
 
-				// niimbluelib also emits a "check" row every 200 rows when enabled - not ported
-				// (CLI test patterns here are far smaller than 200 rows; add if a real image
-				// pipeline needs it).
+				// Ported from niimbluelib: a CHECK marker row every 200 rows. Whether it becomes a
+				// packet is the packet generator's business (it doesn't here), but the marker is
+				// NOT optional - it's what ends a run of identical rows, keeping every repeat count
+				// <= 200 and so inside the single byte it's sent in. Leaving it out (as this port
+				// originally did) let a 270-row run go out as repeat=14, which printed just the top
+				// of the label on a real M2_H.
+				if (row % CHECK_ROW_INTERVAL == CHECK_ROW_INTERVAL - 1) {
+					rowsData.add(new ImageRow(ImageRow.DataType.CHECK, row, 0, 0, 0, null, null));
+				}
 			}
 		}
 

@@ -37,6 +37,47 @@ class NiimbotImageEncoderTest {
 		assertEquals(10, rows.get(0).getRepeat());
 	}
 
+	/** A run of identical rows longer than a byte can count - the case that printed only the top of a label on a real M2_H. */
+	@Test
+	void longRunOfIdenticalRowsNeverExceedsOneByteRepeat() {
+		PixelSource source = new PixelSource() {
+			public int getWidth() {
+				return 16;
+			}
+
+			public int getHeight() {
+				return 600;
+			}
+
+			public boolean isBlack(int x, int y) {
+				return x == 3;
+			}
+		};
+
+		EncodedImage image = NiimbotImageEncoder.encode(source, PageColorType.SINGLE_COLOR);
+
+		int covered = 0;
+		int nextRow = 0;
+		for (ImageRow row : image.getRowsData()) {
+			if (row.getDataType() == ImageRow.DataType.CHECK) {
+				continue;
+			}
+			assertEquals(nextRow, row.getRowNumber());
+			assertEquals(true, row.getRepeat() >= 1 && row.getRepeat() <= 255, "repeat " + row.getRepeat());
+			covered += row.getRepeat();
+			nextRow += row.getRepeat();
+		}
+		assertEquals(600, covered);
+
+		int packetRepeats = 0;
+		for (NiimbotPacket packet : PacketGenerator.writeImageDataSingleColor(image, 16)) {
+			byte[] data = packet.getData();
+			// both bitmap-row packet variants: pos(2) + counts(3) + repeat(1) + payload
+			packetRepeats += data[5] & 0xff;
+		}
+		assertEquals(600, packetRepeats);
+	}
+
 	@Test
 	void singleBlackPixelProducesOnePixelsRow() {
 		PixelSource source = new PixelSource() {

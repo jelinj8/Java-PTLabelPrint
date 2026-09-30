@@ -406,13 +406,12 @@ public class PacketGenerator {
 
 	/**
 	 * Builds the one-way bitmap-row/empty-row packet stream for a single-color {@link EncodedImage}.
-	 * Ported from niimbluelib's {@code writeImageDataSingleColor} - the "check line" packet (sent
-	 * periodically on very tall images, {@code enableCheckLine} in niimbluelib) isn't ported,
-	 * matching {@link NiimbotImageEncoder}'s own note ({@link NiimbotImageEncoder} never emits
-	 * {@link ImageRow.DataType#CHECK} rows in the first place, so there is nothing for this method
-	 * to act on yet even for a caller that wants it, e.g. {@code B21V1PrintTask}/
-	 * {@code B21L2BPrintTask} - both simply don't get periodic check-line packets, which is a
-	 * self-test convenience, not something required for a page to print correctly).
+	 * Ported from niimbluelib's {@code writeImageDataSingleColor} - except the "check line" packet
+	 * ({@code enableCheckLine} in niimbluelib, off by default there too): {@link NiimbotImageEncoder}
+	 * does emit the {@link ImageRow.DataType#CHECK} marker rows, but they're skipped here rather than
+	 * turned into packets, so tasks that would enable it upstream ({@code B21V1PrintTask}/
+	 * {@code B21L2BPrintTask}) simply don't get periodic check-line packets - a self-test
+	 * convenience, not something required for a page to print correctly.
 	 */
 	public static List<NiimbotPacket> writeImageDataSingleColor(EncodedImage image, int printheadPixels, String countsMode) {
 		List<NiimbotPacket> out = new ArrayList<>();
@@ -427,7 +426,7 @@ public class PacketGenerator {
 			} else if (row.getDataType() == ImageRow.DataType.VOID) {
 				out.add(printEmptySpace(row.getRowNumber(), row.getRepeat()));
 			}
-			// CHECK rows: not ported, see javadoc.
+			// CHECK rows: no packet, see javadoc.
 		}
 
 		return out;
