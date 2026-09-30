@@ -6,11 +6,11 @@ import cz.bliksoft.ptlabelprint.protocol.Transport;
 
 /**
  * Shared plumbing for {@link LabelPrinter}s across Phomemo's protocol tags. Every Phomemo
- * sub-protocol - implemented ({@code d-series}, {@link PhomemoDSeriesLabelPrinter}) or merely
- * cataloged ({@code m02}/{@code m04}/{@code m110}/generic {@code m-series}/{@code p12}/
- * {@code tspl}, see {@link PrinterFamily}) - shares the same BLE transport shape confirmed for
- * {@code d-series}: no connect-handshake/info-query concept at all (the printer never sends an
- * acknowledgement between commands), and the same UUID-fallback discovery
+ * sub-protocol - implemented ({@code d-series}, {@link PhomemoDSeriesLabelPrinter}; {@code m110},
+ * {@link PhomemoM110LabelPrinter}) or merely cataloged ({@code m02}/{@code m04}/generic
+ * {@code m-series}/{@code p12}/{@code tspl}, see {@link PrinterFamily}) - shares the same BLE
+ * transport shape confirmed for {@code d-series} and {@code m110}: no connect handshake and a print
+ * flow that never waits on a reply, and the same UUID-fallback discovery
  * {@link cz.bliksoft.ptlabelprint.protocol.BleTransport} already does generically, not a
  * protocol-specific channel. So {@link #connect()}/{@link #close()}/{@link #isConnected()} are the
  * same concrete body for all of them, and only this class - not each sub-protocol individually -
@@ -22,12 +22,9 @@ import cz.bliksoft.ptlabelprint.protocol.Transport;
  * transport (Serial, ...) they have; see {@link PrinterFactory}'s own javadoc.
  *
  * <p>
- * Has exactly one concrete subclass today ({@link PhomemoDSeriesLabelPrinter}) - this is a real
- * refactor removing real, currently-existing duplication between two files, not speculative
- * scaffolding for the unimplemented families (those have no {@link LabelPrinter} subclass at all,
- * per {@link PrinterFactory}'s {@link UnimplementedPrinterFamilyException}); it's simply also
- * shaped correctly to receive a sibling class the day one of those 6 families gets a real print
- * implementation.
+ * Has two concrete subclasses ({@link PhomemoDSeriesLabelPrinter}, {@link PhomemoM110LabelPrinter}).
+ * The still-unimplemented families have no {@link LabelPrinter} subclass at all, per
+ * {@link PrinterFactory}'s {@link UnimplementedPrinterFamilyException}.
  */
 public abstract class PhomemoLabelPrinter extends AbstractLabelPrinter {
 

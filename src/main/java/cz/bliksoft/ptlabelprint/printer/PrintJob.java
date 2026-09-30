@@ -12,6 +12,9 @@ public class PrintJob {
 	/** {@link Rotation#NONE}, not {@link Rotation#AUTO} - see {@link Rotation#NONE}'s own javadoc for
 	 *  why the auto-fit-rotate behavior must be requested explicitly, not assumed by default. */
 	private Rotation rotation = Rotation.NONE;
+	private Double mediaSideGapMm;
+	private double topOffsetMm;
+	private boolean topOffsetKeepsLength = true;
 
 	public int getCopies() {
 		return copies;
@@ -55,6 +58,67 @@ public class PrintJob {
 
 	public PrintJob setRotation(Rotation rotation) {
 		this.rotation = rotation;
+		return this;
+	}
+
+	/**
+	 * Extra side gap of the loaded media, in mm: how much further from the edge the printer aligns
+	 * media to the label starts than the printer assumes by itself. {@code null} or 0 (the default)
+	 * leaves the image where the printer puts it; a positive value moves it that far sideways, into
+	 * the label. Like {@link #isContinuousMedia()} this describes the media, so it's set per job.
+	 *
+	 * <p>
+	 * The case it exists for: a Phomemo M421 aligns media to the left and prints in place on stock
+	 * whose label starts about 1mm in from the backing paper's edge; stock with a wider gap (a 102mm
+	 * roll measured ~2.5mm) needs the difference - there, about 1.5.
+	 *
+	 * <p>
+	 * <b>Only {@code PhomemoM110LabelPrinter} honours it so far</b>; the other families ignore it.
+	 */
+	public Double getMediaSideGapMm() {
+		return mediaSideGapMm;
+	}
+
+	public PrintJob setMediaSideGapMm(Double mediaSideGapMm) {
+		if (mediaSideGapMm != null && mediaSideGapMm < 0) {
+			throw new IllegalArgumentException("Media side gap can't be negative: " + mediaSideGapMm);
+		}
+		this.mediaSideGapMm = mediaSideGapMm;
+		return this;
+	}
+
+	/**
+	 * Moves the image along the feed direction, in mm (default 0): positive starts it later (further
+	 * down the label), negative earlier. For media on which the printer's own gap detection puts the
+	 * start of the print slightly off - seen on a Phomemo M421 both ways, about 1mm early on one
+	 * stock and slightly late on another, so like {@link #getMediaSideGapMm()} it's per job.
+	 * {@link #isTopOffsetKeepsLength()} decides what happens at the other end.
+	 *
+	 * <p>
+	 * <b>Only {@code PhomemoM110LabelPrinter} honours it so far</b>; the other families ignore it.
+	 */
+	public double getTopOffsetMm() {
+		return topOffsetMm;
+	}
+
+	public PrintJob setTopOffsetMm(double topOffsetMm) {
+		this.topOffsetMm = topOffsetMm;
+		return this;
+	}
+
+	/**
+	 * true (default): the job keeps the image's own length - whatever {@link #getTopOffsetMm()} pushes
+	 * past one end is cut off, and the other end is filled with blank rows. false: the job's length
+	 * changes by the offset instead - longer for a positive one (blank rows added at the top, nothing
+	 * cut), shorter for a negative one. A job longer than the label can run into the gap, which is
+	 * why keeping the length is the default.
+	 */
+	public boolean isTopOffsetKeepsLength() {
+		return topOffsetKeepsLength;
+	}
+
+	public PrintJob setTopOffsetKeepsLength(boolean topOffsetKeepsLength) {
+		this.topOffsetKeepsLength = topOffsetKeepsLength;
 		return this;
 	}
 }

@@ -17,6 +17,9 @@ import java.util.Optional;
  * {@link cz.bliksoft.ptlabelprint.printer.UnimplementedPrinterFamilyException} for how that's
  * surfaced through the printer-abstraction layer, and the project's CLAUDE.md "Protocol families"
  * section for the actual command bytes each tag would need if/when one gets ported.
+ * <b>{@code m110} has since been ported</b> ({@link M110Commands}/{@link M110Printer}, brought up
+ * on a Phomemo M421 - a model phomymo doesn't list, so it has no row here; see
+ * {@link M110PrinterModels}); the other 5 tags are still data only.
  *
  * <p>
  * <b>3 of these 17 models have no reachable {@link cz.bliksoft.ptlabelprint.printer.PrinterCatalog}

@@ -13,7 +13,7 @@ class PrinterFactoryTest {
 
 	@ParameterizedTest
 	@EnumSource(value = PrinterFamily.class,
-			names = {"PHOMEMO_M02", "PHOMEMO_M04", "PHOMEMO_M110", "PHOMEMO_M_SERIES", "PHOMEMO_P12", "PHOMEMO_TSPL"})
+			names = {"PHOMEMO_M02", "PHOMEMO_M04", "PHOMEMO_M_SERIES", "PHOMEMO_P12", "PHOMEMO_TSPL"})
 	void unimplementedFamiliesThrowADistinctException(PrinterFamily family) {
 		PrinterDefinition definition = new PrinterDefinition("test-id", family, Collections.emptyList(), false);
 

@@ -9,7 +9,7 @@ package cz.bliksoft.ptlabelprint.printer;
  * (zebra, brother).
  *
  * <p>
- * The 6 {@code PHOMEMO_*} constants below {@link #PHOMEMO_D_SERIES} are the deliberate exception:
+ * The 5 {@code PHOMEMO_*} constants other than {@link #PHOMEMO_D_SERIES}/{@link #PHOMEMO_M110} are the deliberate exception:
  * cataloged (real specs in {@code protocol.phomemo.PhomemoPrinterModels}) but <b>not</b>
  * implemented (no command-builder/print-flow code, no {@link LabelPrinter} subclass) - see
  * {@link PrinterFactory} for the distinct {@link UnimplementedPrinterFamilyException} this throws
@@ -30,7 +30,7 @@ public enum PrinterFamily {
 	PHOMEMO_M02,
 	/** Cataloged, NOT implemented - see {@link PrinterFactory}/{@link UnimplementedPrinterFamilyException}. */
 	PHOMEMO_M04,
-	/** Cataloged, NOT implemented - see {@link PrinterFactory}/{@link UnimplementedPrinterFamilyException}. */
+	/** {@code cz.bliksoft.ptlabelprint.protocol.phomemo}'s {@code m110} sub-protocol (confirmed: Phomemo M421; M110/M120 untested). */
 	PHOMEMO_M110,
 	/** Cataloged, NOT implemented - see {@link PrinterFactory}/{@link UnimplementedPrinterFamilyException}. */
 	PHOMEMO_M_SERIES,

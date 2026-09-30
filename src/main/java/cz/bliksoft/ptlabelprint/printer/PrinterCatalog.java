@@ -127,7 +127,7 @@ public final class PrinterCatalog {
 			def("phomemo-q30", PrinterFamily.PHOMEMO_D_SERIES, true, "Q30"),
 			def("phomemo-q30s", PrinterFamily.PHOMEMO_D_SERIES, false, "Q30S"),
 
-			// Phomemo's 6 other cataloged-but-not-yet-implemented sub-protocols (see PrinterFamily's
+			// Phomemo's 6 other sub-protocols - cataloged, and all but m110 not yet implemented (see PrinterFamily's
 			// own javadoc for why these families exist despite having no LabelPrinter implementation,
 			// and PhomemoPrinterModels for the full per-model specs). Name prefixes copied verbatim
 			// from phomymo's own printers.json namePatterns. 3 of that file's 17 non-d-series models
@@ -147,6 +147,9 @@ public final class PrinterCatalog {
 			def("phomemo-m260", PrinterFamily.PHOMEMO_M_SERIES, false, "M260"),
 			def("phomemo-m04s-53", PrinterFamily.PHOMEMO_M04, false, "M04A", "M04"),
 			def("phomemo-m110", PrinterFamily.PHOMEMO_M110, false, "M110", "M120"),
+			// Not in phomymo's printers.json at all - prefix is the real device's own advertised name
+			// ("M421"), family confirmed on real hardware; see protocol.phomemo.M110Printer.
+			def("phomemo-m421", PrinterFamily.PHOMEMO_M110, true, "M421"),
 			def("phomemo-pm241", PrinterFamily.PHOMEMO_TSPL, false, "PM-241", "PM241", "PM 241")));
 
 	private PrinterCatalog() {
