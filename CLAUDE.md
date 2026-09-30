@@ -286,6 +286,331 @@ history").
 
 A git repo was initialized locally (`git init`) but nothing has been committed yet.
 
+### Phomemo M421: `m110` protocol implemented and confirmed printing (2026-09-30)
+
+**This supersedes every "`m110` is cataloged, not implemented" statement elsewhere in this file** -
+those were true until this section; `m02`/`m04`/generic `m-series`/`p12`/`tspl` are still data only
+(5 unimplemented Phomemo families now, not 6).
+
+A real Phomemo M421 (4"-class, 203 DPI, advertises as `M421`) **printed a 40x20mm gap label
+correctly** - right way up, not shifted, not cropped - via `ptlabelprint-cli phomemo-m110-print-test`.
+phomymo doesn't know the M421 at all, so the protocol was established from evidence, not naming:
+
+- It answers Phomemo M-series status queries over the usual `ff00`/`ff02`/`ff03` channel:
+  `1F 11 07` → `1a 07 00 02 06` (firmware), `1F 11 08` → `1a 04 2a`, `1F 11 11` → `1a 06 89`
+  (paper), `1F 11 12` → `1a 05 98` (cover). On connect it sends `01 07`, `02 b6 00`,
+  `1a 3b 04 00 04 00 00` unprompted (meaning unknown); `1a 0f 0c` arrives when a job finishes.
+- phomemo-tools (GPL-3.0 - **facts only, no code ported**) has a `cups/drv/phomemo-m421.drv` that
+  routes the M421 through its M110 filter: rows at the *label's* width, not rotated, media type
+  `0a` gaps / `0b` continuous / `26` marks.
+- That dialect is phomymo's MIT `m110` protocol (`printM110`), ported as `M110Commands`/
+  `M110Printer`: `1B 4E 0D <speed>`, `1B 4E 04 <density>`, `1F 11 <media>`, `GS v 0` raster header,
+  data in 128-byte chunks, footer `1F F0 05 00 1F F0 03 00`.
+
+Wired into `.printer`: `PrinterCatalog` has `phomemo-m421` (confirmed) next to the existing
+`phomemo-m110` (M110/M120 - same code path, **untested**), `PrinterFactory` returns a
+`PhomemoM110LabelPrinter`, `M110PrinterModels` holds the per-model capabilities. Unlike `d-series`,
+rows are sent at the image's own width - the caller sizes the image to the loaded label (8px/mm);
+only an image wider than the printhead is cropped. The unified path is hardware-confirmed too:
+`print-test <address> --pattern-mm 40x20` printed the same label, identically, through
+`LabelPrinter#print(BufferedImage, PrintJob)`. The M421's printhead is taken as 912px: that is the
+row width (114 bytes) Phomemo's own app sends it - see "M421: what the official app does".
+
+Things that differ from every other printer tested so far:
+
+- **It needs an OS-level bonded link.** Read `ff01` and write `ff02` work unbonded, but subscribing
+  to `ff03` fails with Windows `0x80650005` ("attribute requires authentication"), so `BleTransport`
+  can't connect at all until the device is paired. BSToolbox-BLE's programmatic
+  `BlePeripheral.pair()` returned `Failed` (status 19) for every PIN tried (empty, `000000`,
+  `123456`, `0000`); it only worked once the user accepted a Windows pairing prompt by hand.
+  `raw --pair[=PIN]` / `--no-subscribe` were added for exactly this kind of diagnosis.
+- **It has credit-based flow control, and large labels need it** - see "M421 large labels" below.
+  `01 nn` grants write credits (`01 07` on connect, `01 01` per write taken), `02 b6 00` is the
+  largest write it takes (182 bytes). The Q30 note below calling `01 01` unrelated to writes was
+  observed on the Q30 only; don't carry it over to the M421.
+- **Its name isn't in the first advertisement** (same as the Q30, per the user), so an
+  address-filtered scan returned a null name and `connect`/`print-test` couldn't detect the family;
+  both now scan with `new ScanFilter().withAddress(address).requireName()` - BSToolbox-BLE's own
+  answer to this, don't hand-roll a second scan for it.
+- `print-test` refuses to run on this family without `--image` or `--pattern-mm`: its default
+  pattern is a printhead-sized square, which on a ~100mm head would print far past a 40mm label.
+  `--pattern-mm=WIDTHxHEIGHT` (any family) generates the asymmetric alignment pattern at the
+  connected printer's own DPI instead.
+
+**Label positioning on small labels is the printer's own behaviour, not a bug here.** With 40x20mm
+labels the content sits slightly low, the label's bottom edge stays under the tear edge (it can't be
+torn off cleanly), and the feed button advances *two* labels per press. The user confirmed all of
+this persists after the printer's own calibration **and when printing through the official app** -
+so there's nothing for this project's print flow to fix. The printer does apply *some* tear offset
+(it feeds back before the next print, per the user) - just slightly too small for this stock - so it
+is presumably a stored printer setting, but no command for it appears in either reference project
+(searched phomymo's `printer.js`/`constants.js` and phomemo-tools' README; don't invent one). **The
+official app has no such setting either** (user-checked), so there is nothing to capture: Phomemo's
+own labels simply have a bigger gap, which is what makes the fixed offset work for them. Closed as
+a property of the media, not of any software. The user considers it acceptable provided large labels
+(e.g. 100x150mm, the size this shipping-label printer is built for) don't show it - **not yet
+tested**, no such media has been through it.
+
+Everything above was tested over this PC's own Bluetooth adapter, **not** the ESP32 remote bridge.
+
+### M421 large labels: data starvation, fixed by sending on the printer's credits (2026-09-30)
+
+A 100x150mm label (800x1200px, 120 KB) with phomymo's pacing **started, slowed down, and stopped
+after ~20mm**, twice, over the local adapter. What the evidence showed, in order:
+
+- *Wrong first guess - receive-buffer overflow* (20mm x 100 bytes/row is suspiciously close to
+  16 KB). Gating every write on a returned credit, stop-and-wait, changed nothing, and the log
+  refuted it: all 943 `01 01` credits for the job came back on time, none withheld.
+- That same log showed the printer notifying **`1a 0b b8` 6s into the job - "print failed"**
+  (phomymo's `ble.js` status parser: type `0b`, value `b8` = -1; `1a 0f 0c` = done).
+- The user's description ("slowed down and stopped") plus the arithmetic gave the real cause: the
+  M421 **prints while it receives**, and 128 bytes per ~20-30ms is ~4-5 KB/s - for 100-byte rows
+  that's ~5mm of label per second. It slows to match, runs dry, and fails the job. A 40mm-wide label
+  needs 2.5x less data per mm, which is why small labels were fine.
+
+Fix (`M110Printer`): the credits are a *throughput* mechanism. The printer announces 7 credits and a
+182-byte maximum write right after the notify subscribe - so they're captured by a listener
+installed **before** `connect()` (`M110Printer.listenForLinkInfo`, done in
+`PhomemoM110LabelPrinter.connect()`) - and the data then goes out in 182-byte writes with no fixed
+delay, each write spending a credit, up to 7 in flight. A failed-job notification aborts the send
+with an `IOException`. A printer that announces no credits (nothing is known about the real
+M110/M120) keeps phomymo's pacing untouched. Result on the same label: 665 writes in ~18s
+(~6.7 KB/s, ~27ms per write over the Windows adapter), the printer reported the job finished, and
+**the label printed complete (user-confirmed) - but still slowing progressively along its length.**
+
+**That remaining slow-down is not this code's send rate - the printer itself takes raw raster at
+only ~7 KB/s over BLE.** Measured without printing, by credit-gating harmless `1F 11 11` status
+queries of different sizes: 3-byte writes are credited back in 7ms, 60-byte in 13ms, 120-byte in
+18ms, 180-byte in ~25ms - the credit return time scales with the write size and throughput flattens
+at 6.6-7.4 KB/s, while this PC can issue a write every ~7ms on a 15ms connection interval
+(requesting `THROUGHPUT_OPTIMIZED` changed nothing). So the 7-credit window fills and the printer
+sets the pace. At 100 bytes per row that's ~70 rows/s, under 9mm of label per second: a 100x150mm
+label can't take less than ~17s this way, and the printer slows as its initial buffer drains. The
+fixed pacing failed outright only because ~4-5 KB/s fell below whatever the printer tolerates.
+
+Don't try to "fix" this by sending faster with the same commands - there is no faster over BLE. The
+capture of the official app (next section) showed how Phomemo gets around it: it doesn't use BLE.
+
+Also open: this path is one `transport.write` per chunk, i.e. one round trip each through a remote
+bridge, where `DSeriesPrinter`'s single-`writeStream` trick can't be used (the firmware can't see
+credits). If a round trip costs more than the ~26ms the printer needs per 182-byte write anyway, the
+bridge falls below the ceiling and may starve the printer again - **large labels through the ESP32
+bridge are untested.** `phomemo-m110-print-test -v` logs every notification with a timestamp plus the
+captured link info; that's the tool for it.
+An unprompted `1a 05 99` also appeared 15s into the failed run - the cover being opened (`98` is
+closed on this printer, see the capture notes below).
+
+### M421: what the official app does (HCI snoop capture, 2026-09-30)
+
+A capture of Phomemo's Android app printing a full 100x150mm label on the M421 (Samsung S24 Ultra;
+see "Getting an HCI snoop log off a Samsung" below). **Facts from that capture:**
+
+- **The app uses classic Bluetooth, not BLE.** It opens a BR/EDR connection to the same address
+  (`07:9F:2C:8E:83:45` - the printer is dual-mode), looks up the Serial Port service (SDP, UUID
+  `0x1101`) and talks over RFCOMM channel 1. No GATT traffic to the printer at all.
+- **Throughput is the whole difference.** 136,889 bytes went out in 662-byte RFCOMM frames at
+  ~17-19 KB/s once the raster started (~7s for the data), against the ~7 KB/s BLE ceiling measured
+  above. The raster is **raw, uncompressed** - the app explicitly selects compression mode 0.
+- **Its command set is the `m04`-style one, not phomymo's `m110`:**
+  ```
+  1f 11 0a                 media type: gaps
+  1f 11 02 06              density (m04's DENSITY command, value 6)
+  1f 11 24 00              unknown, sent twice
+  1f 11 35 00              compression: 0 = raw
+  1b 40                    ESC @
+  1d 76 30 00 72 00 b0 04  GS v 0, 114 bytes wide, 1200 rows
+  <136800 raster bytes>    and nothing after it - no footer, no feed command
+  ```
+  Before that it polls status: `1f 11 38`, `12`, `13`, `07`, `09`, `11`, `19`. The printer reported
+  `1a 0f 0c` (finished) ~3s after the last raster byte.
+- **Rows are 114 bytes = 912px**, for a 100mm (800px) label - the full printhead width, with the ink
+  in columns 70-731. `M110PrinterModels` now uses 912 for the M421 (it was 812, a guess from
+  phomemo-tools' widest media). This project's label-width rows print correctly positioned too, so
+  no padding to 912 was added.
+- Replies seen: `1a 17 03`, `1a 05 98`, `1a 03 a8`, `1a 07 00 02 06`, `1a 08 <15 ASCII chars>`
+  (serial), `1a 06 89`, `1a 0c 0a`. **`1a 05 98` is "cover closed" on this printer** (it was
+  printing) - the reverse of phomymo's `ble.js` mapping - so the unprompted `1a 05 99` seen in a
+  failed run here was the cover being opened.
+
+**What this means for the project:** a fast M421 needs a classic-Bluetooth serial transport, not a
+cleverer BLE sender - now built, see the next section. The ESP32-C6 bridge can't help: that chip is
+BLE-only. `M110Printer` still sends phomymo's `m110` commands (hardware-confirmed over both BLE and
+serial); switching to the app's sequence is possible but hasn't been needed or tried.
+
+### Serial transport (`SerialTransport`, classic-Bluetooth SPP) - 2026-09-30
+
+**"Serial transport: not implemented" elsewhere in this file is superseded by this section.**
+`protocol.SerialTransport` is a `Transport` over jSerialComm: open a port, a reader thread feeding
+the raw-data listener, blocking writes, and a `writeStream` that ignores the BLE chunk/delay pacing
+and just writes (the link has real flow control). Nothing printer-specific in it.
+
+Its first real use is the M421 over classic Bluetooth: once the printer is **paired with Windows as
+a classic device** (separately from the BLE pairing - the user did it through Windows' Bluetooth
+settings), Windows creates an outgoing SPP COM port for it (here `COM31`, described as `JL_SPP`).
+Over that port the printer answers status queries in ~6ms and sends no `01`/`02` credit
+notifications - those are BLE-side only - so `M110Printer` takes its plain (uncredited) path, which
+through this transport means "write the whole raster at once".
+
+- `ptlabelprint-cli ports` lists serial ports; `print-test --serial COM31 --model M421 --pattern-mm
+  100x150` prints through one. `--model` is required: a COM port has no advertised name for
+  `PrinterCatalog` to detect the family from. `--baud` exists but is meaningless for Bluetooth ports.
+- **Result: the 100x150mm pattern printed in 11.2s through the unified `LabelPrinter` path, the
+  printer reporting the job finished** - against ~18s and a visibly slowing print over BLE.
+  User-confirmed: complete, at even speed, and dimensionally right (the pattern's frame measured
+  97.8 x 148mm against a nominal 98 x 148).
+- **Horizontal position: the M421 aligns media to the left and starts printing about 1mm in from
+  that edge** - which is where a label with the usual 1mm side gap (backing-paper edge to label
+  edge) begins, so such stock prints in place with no help (the 40x20 stock: unshifted = in place;
+  the same job moved 1mm right landed at 2mm). Stock with a wider gap prints too far left by the
+  difference: on the 102mm stock the frame, drawn 1mm into a 100mm-wide image, landed on the
+  label's left edge with 3.8mm free on the right, and moving it 1mm right gave 0.5mm left / 1.5mm
+  right - so that stock wants ~1.5mm. The setting for it is `PrintJob#setMediaSideGapMm` (CLI
+  `--side-gap-mm`): **the extra gap to add, applied as given - unset or 0 means no shift** (pads
+  blank columns on the left). **Only `PhomemoM110LabelPrinter` honours it.** History, so nobody
+  re-derives it: this went raw `leftMarginMm` pad -> "real side gap minus the printer's own 1mm
+  offset" (`M110PrinterModelMeta#getLeftOffsetMm` = 1.0) -> back to a plain additive value with the
+  M421's offset set to 0, at the user's decision ("handle the default left gap as 0 for the M421,
+  just allowing to add gap if needed") - callers shouldn't have to know the printer's 1mm. The
+  per-model offset field remains, 0 for every model. `--side-gap-mm 1.5` on the 102mm stock is
+  derived, not yet printed.
+- **Vertical position is off by ~1mm the other way on this stock and nothing compensates for it:**
+  on that same print the frame had almost no margin at the top and ~2mm at the bottom (nominal 1
+  and 1), i.e. the image starts ~1mm early. The user attributes it to the gap sensor's alignment.
+  The 40x20 stock showed the opposite (print slightly low), so it's media-dependent too.
+  `PrintJob#setTopOffsetMm` (CLI `--top-offset-mm`, signed: positive = later/down, negative =
+  earlier/up) now moves the image along the feed direction, **m110 family only** like the left
+  margin. By default the job keeps its length - rows pushed past one end are cut, the other end is
+  blank; `setTopOffsetKeepsLength(false)` (CLI `--top-offset-changes-length`) lengthens/shortens the
+  job by the offset instead. On the 40x20 stock the vertical position turned out centred with no
+  offset (baseline, two consecutive labels). Two mechanism tests were then printed there, two
+  consecutive labels each, `--side-gap-mm 1 --top-offset-mm 2`: once keeping the length, once with
+  `--top-offset-changes-length` (a 22mm job on 20mm labels). User-reported result: **all four
+  labels came out the same** - the offset moved the print down in both modes, and the 2mm-over-long
+  job did **not** upset the feed (no skipped label, no drift on the following one); what it pushed
+  past the label's end simply didn't appear. Keeping the length stays the default anyway - only a
+  2mm overrun was tried, about the size of the gap. The one difference seen: the pattern's bottom
+  bar, which the offset put right on the label's bottom edge, came out thinner on the first and the
+  last of the four - so **label-to-label registration along the feed varies by roughly half a
+  millimetre**. Sideways the frame measured ~1.5mm left / 0 right here (nominal 1 / 1) with no shift
+  applied, where an earlier run with 1mm added read 2mm: treat the 1mm printer offset and any side
+  gap as good to about +-0.5mm, which is also about how well a ruler reads them.
+- **USB is deliberately not handled here.** The M421's USB port enumerates as a USB *printer-class*
+  device (`USBPRINT`, VID 0483 PID 5740, with a Windows print queue), not a serial port, so
+  jSerialComm can't see it; a raw device-file transport was started and dropped at the user's
+  request - USB printing goes through the OS print system (the user's own SYSTEM / LBL-SYSTEM
+  printing path), not through this library. (Nothing was learned about the USB protocol: the
+  probe that seemed to show the device "echoing" status queries never reached it - Java turned the
+  `\\?\USB#...` device path into a plain file of that name in the working directory and read its
+  own writes back. BSToolbox-print's `link.usb` opens such devices properly, via JNA.)
+- The other transports are unaffected; BLE remains what the ESP32 bridge and every other printer use.
+
+**Getting an HCI snoop log off a Samsung (One UI, Android 16):** enable "Bluetooth HCI snoop log" in
+developer options, **then toggle Bluetooth off and on** (or nothing is recorded - `adb shell svc
+bluetooth disable/enable` works), reproduce, dial `*#9900#` -> "Run dumpstate/logcat" -> "Copy to
+sdcard", then `adb pull /sdcard/log/bluetooth` (a `btsnoop_hci_*.cfa`, plain btsnoop format).
+`adb bugreport` is no use here: it only carries a truncated, events-only summary.
+
+### Downstream wiring (2026-09-30): BSToolbox-print, BSToolbox-jfx-print, BSLabelDesigner
+
+The serial transport and the media-positioning settings are wired into the sibling projects, all
+uncommitted there too, each building against a **locally installed** `ptlabelprint` 0.4.0-SNAPSHOT
+(`mvn install` here; nothing was pushed or deployed):
+
+- **BSToolbox-print** (`lbl.raster.PtLabelPrintRasterTarget` / `lbl.ptlabelprint.
+  LocalTransportConnection`): advanced property `transport` = `BLE` (default) or `SERIAL`
+  (`comPort`, `baudRate`, `printerModel` - resolved through `PrinterCatalog.detectUnambiguous`), and
+  print settings `mediaSideGapMm`, `printTopOffsetMm`, `printTopOffsetKeepsLength` mapped onto
+  `PrintJob`. Hardware-checked: its own connection class opened the M421 on COM31 and printed a
+  40x20 label.
+- **BSToolbox-jfx-print**: editable combos for `comPort` (this machine's serial ports with their
+  descriptions) and `printerModel` (every catalog name prefix), plus warnings when a PTLABELPRINT
+  printer lacks what its transport needs. Compiled and unit-tested only - not yet seen in a running
+  app.
+- **BSLabelDesigner**: dependency bump and credits text only; the settings are plain advanced
+  properties of the printer, so the app's own code didn't change. **Confirmed end to end by the
+  user:** a printer configured as PTLABELPRINT / `transport=SERIAL` / `comPort=COM31` /
+  `printerModel=M421` printed correctly from the designer (template -> ZPL emulator ->
+  BSToolbox-print -> `SerialTransport` -> M421).
+
+Consequence for API changes here: `PrintJob`'s `mediaSideGapMm` / `topOffsetMm` /
+`topOffsetKeepsLength`, `PrinterCatalog.all()` + `PrinterDefinition.getNamePrefixes()`, and
+`SerialTransport(String, int)` now have an external consumer.
+
+### CLI bridge server mode (`--bridge-port`)
+
+Every subcommand gets its adapter from `Cli.openAdapter()`. By default that's a local `BleAdapter`;
+with `--bridge-port <port>` (plus `--bridge-token`, optional `--bridge-name`/`--bridge-wait`, or the
+`PTLABELPRINT_BRIDGE_PORT`/`_TOKEN`/`_NAME` env vars) the process hosts BSToolbox-BLE's
+`RemoteAdapterServer` for the duration of that one command, waits for a bridge to dial in to
+`ws://<this host>:<port>/ble-remote`, and runs the command on the adapter that bridge provides. The
+options are picocli `INHERIT`-scoped, so they work before or after the subcommand.
+
+- The bridge is the WebSocket *client*: nothing can happen until it (re)dials, so each invocation
+  blocks on that (default 60s) - an ESP32 that was idle reconnects on its own backoff.
+- **A token is mandatory.** `RemoteAdapterServer` answers 401 when it has no expected token, and the
+  ESP32 firmware (`firmware-BSBleRemoteBridge`) deliberately stops retrying after a 401 until it is
+  restarted - so `openAdapter()` refuses `--bridge-port` without a token rather than start a server
+  that would lock the bridge out. A *wrong* token has the same effect on the ESP32.
+- Plain `ws://` only (`RemoteAdapterServer` has no TLS) - the firmware's `ws_url` must be `ws://`.
+- **Verified against the real ESP32 bridge** (channel `jjble`, dialing in to port 8091; also with
+  BSToolbox-BLE's own `--remote` client as a stand-in): `discover` found the M421 and `connect`
+  detected it and connected, the ESP32 dialing in ~4s after the server started. **`connect` through
+  the ESP32 needed no pairing step at all** - the notify subscription that Windows refuses on an
+  unbonded link just worked there (why isn't established - the firmware's NimBLE stack presumably
+  secures the link itself).
+- **Printing through the ESP32 is confirmed on the M421** (complete 40x20 label, user-verified) -
+  after one real failure: the first attempt printed only the top ~2.5mm. The whole job had been sent,
+  but this mode's server lives only as long as the command, and the process ended ~0.5s after the
+  footer - shutting the server down disconnects the bridge, which takes the printer's BLE link with
+  it mid-print. That's specific to this per-command server: per the user, Niimbot and Q30 printing
+  through the same bridge works against a persistent server (StorageManagerServer), which never
+  pulls the link out from under a job. Fix (the user's diagnosis): `M110Printer.print` now waits for
+  the printer's `1a 0f 0c` job-finished notification (timeout 5s + 10ms per raster line) before
+  returning, taking over the transport's raw-data listener for the call.
+- **The other printers don't share that problem through this CLI mode** (2026-09-30, all via the
+  ESP32, server shut down right after each command as usual): a Q30 30x12 label
+  (`phomemo-print-test --label 30x12`) and a D11_H 22x12 pattern (`print-test --pattern-mm 22x12`)
+  both printed complete, user-confirmed - so `DSeriesPrinter` needs no wait-for-finish, despite
+  returning as soon as the data is sent. The M2 got a 48x30 pattern on a 50x30 label (48mm rather
+  than 50 because `NiimbotLabelPrinter` doesn't crop and the M2's printhead is narrower than that
+  label) - which printed only its top, for an unrelated reason: see "Niimbot row-repeat overflow"
+  below.
+- **One transient failure seen:** the first M2 attempt died in `connect` with "adapter closed" - the
+  ESP32 dropped its WebSocket and re-dialed mid-connect, and a re-registration replaces (closes) the
+  adapter in use. An immediate retry worked. Cause not investigated; the M2 had the weakest signal of
+  the four (rssi -77).
+
+### Niimbot row-repeat overflow (found and fixed 2026-09-30, on the M2)
+
+**A run of more than 255 identical rows used to print only the top of the label.** A 48x30mm
+alignment pattern on a real M2_H (354 rows, 270 of them identical in the middle) came out as "just
+the top", reproducibly, while a solid 576x240 rectangle printed fine. The `-v` packet log showed why:
+the 270-row run went out as one `PRINT_BITMAP_ROW` packet with repeat `0x0e` - 270 truncated to the
+single byte the field is. It had nothing to do with the bridge or with disconnect timing (the M2's
+status poll only reports `page == 1` once print and feed progress are both 100).
+
+niimbluelib never hits this because its encoder pushes a `check` marker row every 200 rows
+(`row % 200 === 199`) *unconditionally* - only turning it into a `PrinterCheckLine` packet is
+optional (`enableCheckLine`) - and that marker ends any run, capping repeats at 200. This port had
+left the marker out as "not needed, test patterns are far smaller than 200 rows". Now ported
+(`NiimbotImageEncoder`, `CHECK_ROW_INTERVAL`); the packet generator still skips the marker rather
+than emitting a check-line packet. Regression test:
+`NiimbotImageEncoderTest#longRunOfIdenticalRowsNeverExceedsOneByteRepeat`. After the fix the same
+run goes out as repeat 152 + repeat 118, and the reprint came out complete (user-confirmed, through
+the ESP32 bridge). This was a latent bug for every Niimbot model on any label with a long uniform stretch -
+including real use through `StorageManagerServer` - not something the CLI introduced. **Lesson**:
+"upstream only does X when a flag is on" needs checking at both ends - here the flag gated the
+packet, not the marker, and the marker had a second job.
+
+Two smaller things from the same session:
+
+- `NiimbotDevice.waitUntilPrintFinishedByStatusPoll` now also waits for the last page's print and
+  feed progress to read 100 (falling back to "progress unchanged for 3s" for a model that reports
+  none) - a deliberate deviation from niimbluelib, which stops at `page == pagesToPrint`. The M2
+  turned out not to need it, but per the user a printer that reports progress should be waited on
+  to completion, since callers here disconnect right after printing.
+- `print-test -v` turns on Niimbot packet logging (it's what found the bug above).
+
 ### Debugging history: three real issues found printing to the Q30, in order
 
 Useful precedent for bringing up the next device - none of these were guessable from source alone:
@@ -370,9 +695,10 @@ mvn test              # compile + run the test suite (packet framing/parsing/gen
 mvn package -Pdist    # standalone CLI distribution: target/ptlabelprint-<version>/ (+ .zip)
 ```
 
-`common-java-utils-ble` is on the published `0.5.0` release (for its unified `ScanFilter` API) -
-its own flattened POM still drops its `jackson-databind` dependency (confirmed present in the
-actual 0.5.0 release, not just an older snapshot), which is why this project declares
+`common-java-utils-ble` is on the published `0.9.0` release (`bstoolbox-ble.version` in `pom.xml`).
+It was pointed at `0.10.0-SNAPSHOT` for a few hours on 2026-09-30 and put back for the 0.4.0
+release: nothing had changed in BSToolbox-BLE since 0.9.0, so there was no 0.10.0 to wait for. Its
+own flattened POM still drops its `jackson-databind` dependency, which is why this project declares
 `jackson-databind` directly too - see the `pom.xml` comment on that dependency.
 
 Manual real-hardware check, once built (`mvn package -Pdist`, then from `target/ptlabelprint-<version>/`):
@@ -393,7 +719,12 @@ Manual real-hardware check, once built (`mvn package -Pdist`, then from `target/
 ./ptlabelprint-cli.sh gatt <BLE address>   # protocol-agnostic: dump GATT services/characteristics
 ./ptlabelprint-cli.sh raw <address> <hex>  # protocol-agnostic: write raw hex, print whatever comes back
                                             # (--service/--write-char/--notify-char/--with-response/--read
-                                            # for testing an unfamiliar device's channel by hand)
+                                            # for testing an unfamiliar device's channel by hand;
+                                            # --pair[=PIN] bonds first, --no-subscribe skips notify)
+./ptlabelprint-cli.sh phomemo-m110-print-test <address> [--width-mm=40] [--height-mm=20]
+                                            # alignment pattern via M110Printer - USES REAL CONSUMABLES
+                                            # (Phomemo M421 confirmed; M110/M120 untested). Size it
+                                            # to the loaded label. The M421 must be OS-paired first.
 ./ptlabelprint-cli.sh phomemo-print-test <address>   # prints a test square via DSeriesPrinter -
                                             # USES REAL CONSUMABLES (Phomemo D30/D35/D50/Q30/Q30S
                                             # only; confirmed working on a real Q30, see "Status").
@@ -401,7 +732,10 @@ Manual real-hardware check, once built (`mvn package -Pdist`, then from `target/
                                             # (default 12x12, the hardware-confirmed size)
 ./ptlabelprint-cli.sh discover             # unfiltered scan + PrinterCatalog family guess (any family)
 ./ptlabelprint-cli.sh connect <address>    # auto-detect + connect through the .printer abstraction layer
-./ptlabelprint-cli.sh print-test <address> [--image=<file>] [--copies] [--continuous] [--density]
+./ptlabelprint-cli.sh ports                # list serial ports (incl. paired classic-Bluetooth SPP ports)
+./ptlabelprint-cli.sh print-test --serial COM31 --model M421 --pattern-mm 100x150
+                                            # same print-test, over a serial port instead of BLE
+./ptlabelprint-cli.sh print-test <address> [--image=<file> | --pattern-mm=40x20] [--copies] [--continuous] [--density]
                                             # [--rotation=auto|none|90|180|270]
                                             # USES REAL CONSUMABLES - manufacturer-agnostic
                                             # LabelPrinter#print(BufferedImage, PrintJob), any
