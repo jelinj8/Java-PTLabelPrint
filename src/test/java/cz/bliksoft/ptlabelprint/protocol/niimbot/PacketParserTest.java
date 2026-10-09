@@ -109,6 +109,19 @@ class PacketParserTest {
 		assertEquals("01020304", PacketParser.parsePrinterSerialNumberResponse(packet));
 	}
 
+	/** Both replies captured from a real N1 (model 3586), whose lid byte is inverted like the B18's. */
+	@Test
+	void n1HeartbeatLidIsInverted() {
+		NiimbotPacket closed = new NiimbotPacket(ResponseCommandId.IN_HEARTBEAT_ADVANCED_1.getCode(),
+				hexToBytes("2021003b003a32490104"));
+		NiimbotPacket open = new NiimbotPacket(ResponseCommandId.IN_HEARTBEAT_ADVANCED_1.getCode(),
+				hexToBytes("2019003a003932490004"));
+
+		assertEquals(Boolean.TRUE, PacketParser.parseHeartbeatAdvanced1Response(closed, 3586).getLidClosed());
+		assertEquals(Boolean.FALSE, PacketParser.parseHeartbeatAdvanced1Response(open, 3586).getLidClosed());
+		assertEquals(100, PacketParser.parseHeartbeatAdvanced1Response(closed, 3586).getBatteryPercents());
+	}
+
 	private static byte[] hexToBytes(String hex) {
 		byte[] out = new byte[hex.length() / 2];
 		for (int i = 0; i < out.length; i++) {

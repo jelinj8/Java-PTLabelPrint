@@ -105,6 +105,54 @@ triggering it by accident.
 
 `PrinterCatalog`'s `M2_H` entry is now marked `isConfirmedOnHardware() == true` to match.
 
+**Configured model instead of name detection (2026-10-09)**: `connect`/`print-test` take
+`--model NAME` over BLE too (not just with `--serial`): the family comes from the catalog entry for
+that name, and the scan stops at the first advertisement from the address instead of waiting for
+the name (`requireName()`) - faster for printers that name themselves only in a later packet (Q30,
+M421), and the only way a printer renamed through its own app (Niimbot's allows it) still connects.
+Both print how long the scan took. BSToolbox-print does the same when a BLE printer has
+`printerModel` set (`LocalTransportConnection`, `BleAdapters.find(..., requireName)`).
+
+**Confirmed against a real Niimbot N1 (2026-10-09)** - no code changes were needed, only
+`PrinterCatalog`'s `N1` entry flipped to confirmed (so "only D11_H, M2_H, and Q30" elsewhere in this
+file now also includes the N1):
+- `discover` found it as `N1-I529020317` → `N1(NIIMBOT)`; no OS pairing needed. It sends its name
+  in the first advertisement (found with the name in ~0.5s), but after a disconnect it stops
+  advertising for several seconds - an immediate reconnect's scan can miss it. (This PC's BLE scan
+  saw *no devices at all* until Bluetooth was toggled off/on after a Remote Desktop session - if
+  `discover` comes back completely empty, try that before suspecting anything else.)
+- `info`: **protocol v1** (the M2 is v4, the D11_H v5), model ID 3586 → `N1`, serial matched the
+  name. It reports neither printhead width nor DPI class (both `null`), so `PrinterModels`' values
+  (96px, 203dpi, `PrintDirection.LEFT`) are what's used.
+- `media`: thermal-transfer like the M2 - paper tag (gapped) and ribbon tag (`PVC_TAG`) both read.
+  The paper-geometry query answers "Feature not supported". Its heartbeat (`ADVANCED_1`, protocol
+  v1) is the 10-byte variant that carries only lid and battery - the other fields are `null` by
+  design, not a parsing gap. **The lid byte is inverted**: `01` closed, `00` open (both captured;
+  `PacketParserTest#n1HeartbeatLidIsInverted`), like its neighbour 3584 (B18) - so `3586` was added
+  to `PacketParser`'s inverted-lid list, a deliberate deviation: niimbluelib's own list lacks it and
+  reports a closed N1 as open. (B18S, 3585, isn't in that list either; untested, left alone.) With
+  the lid open the RFID queries return no tags. The two tags count in different units: the paper
+  tag's `usedPaper` went 2→4 over the two test labels (labels), the ribbon tag's 48→55 - **cm of
+  ribbon** (2x30mm labels + gaps ≈ 6.6cm, rounded up). Consistent with the ribbon itself: 14mm wide,
+  16m long (`allPaper=1600`), sold as enough for two rolls of 190 14x30mm labels (≈12.5m). Open
+  oddity: the loaded paper roll's tag says `allPaper=228`, not 190.
+- `print-test --pattern-mm 30x12` on 14x30mm labels (printhead is 12mm, so 12mm is the most the
+  label's short side can take): **printed correctly through `B1PrintTask`**, orientation right
+  (90°CW for `LEFT`, same as the D11_H), frame 27.5x10mm against a nominal 28x10. The *first* label
+  after loading the roll printed over the gap; the second fitted the label (≈0.5mm late, within the
+  label-to-label variation seen on other printers) - first-label gap finding, not a code issue.
+  A gap calibration didn't change that lean. **Print offset**: Niimbot's own app has one, but it's
+  applied app-side (setting it changed nothing in our prints, and niimbluelib has no such command;
+  niimblue, too, just shifts the image), so `NiimbotLabelPrinter` now honours
+  `PrintJob#getTopOffsetMm()`/`isTopOffsetKeepsLength()` like the m110 family does (shared
+  `image.ImageShift`), applied after every rotation, so rows = feed direction for either
+  `PrintDirection`. Not set by default (unset = no shift, nothing cropped). Hardware-confirmed:
+  `print-test --pattern-mm 30x12 --top-offset-mm -1` moved the print the same way as the app's -1
+  and centred it on this 14x30 stock, nothing visibly cut (a negative offset drops rows from the
+  *start* - here the pattern's blank margin). `mediaSideGapMm` is still m110-only.
+  During page end the printer sends unsolicited `0xd3` packets (`00 c7`/`00 ef` = rows 199/239,
+  i.e. the every-200-rows check marker and the last row); `NiimbotDevice` drops them harmlessly.
+
 `Cli` wires the family up with `scan`/`info`/`media`/`niimbot-calibrate`/`niimbot-set-time`/
 `niimbot-firmware-upgrade`/`gatt`/`raw`/`niimbot-print-test` subcommands. **Not implemented yet**:
 Serial transport. A real (if basic - fixed-threshold, no dithering) image pipeline now exists via

@@ -95,7 +95,8 @@ public class PrintJob {
 	 * {@link #isTopOffsetKeepsLength()} decides what happens at the other end.
 	 *
 	 * <p>
-	 * <b>Only {@code PhomemoM110LabelPrinter} honours it so far</b>; the other families ignore it.
+	 * Honoured by {@code PhomemoM110LabelPrinter} and {@code NiimbotLabelPrinter}; the other families
+	 * ignore it.
 	 */
 	public double getTopOffsetMm() {
 		return topOffsetMm;

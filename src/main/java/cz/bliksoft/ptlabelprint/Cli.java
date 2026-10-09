@@ -1048,8 +1048,32 @@ public class Cli implements Runnable {
 	}
 
 	/**
+	 * Scans for {@code address} (stopping as soon as it's seen) and reports how long that took, or
+	 * says why not and returns {@code null}. {@code requireName} waits for the advertised name, which
+	 * family detection needs and some devices (confirmed: Phomemo Q30, M421) only send in a later
+	 * packet than the first one seen - a caller that was told the model doesn't need it.
+	 */
+	static BleUtils.BleDeviceResult scanForAddress(BleAdapter adapter, String address, boolean requireName,
+			long scanTimeoutMs) throws Exception {
+		ScanFilter filter = new ScanFilter().withAddress(address);
+		if (requireName) {
+			filter.requireName();
+		}
+		long start = System.nanoTime();
+		List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, filter, scanTimeoutMs);
+		if (found.isEmpty()) {
+			System.err.println("Device " + address + " not found during scan (run 'discover' first to confirm the address).");
+			return null;
+		}
+		System.out.println("Found " + address + " in " + (System.nanoTime() - start) / 1_000_000 + " ms"
+				+ (requireName ? " (with its name)" : ""));
+		return found.get(0);
+	}
+
+	/**
 	 * Connects through the {@link cz.bliksoft.ptlabelprint.printer} abstraction layer: detects the
-	 * family from the device's advertised name (see {@link PrinterCatalog}), then dispatches to the
+	 * family from the device's advertised name (see {@link PrinterCatalog}) unless {@code --model}
+	 * names it, then dispatches to the
 	 * matching {@link LabelPrinter}. For Niimbot, prints the same {@link PrinterInfo} {@code info}
 	 * does; Phomemo's {@code d-series} has no info-query capability at all (see
 	 * {@link cz.bliksoft.ptlabelprint.printer.PhomemoDSeriesLabelPrinter}'s javadoc), so a
@@ -1065,34 +1089,43 @@ public class Cli implements Runnable {
 				description = "How long to scan for the address before connecting, in ms (default: ${DEFAULT-VALUE}).")
 		long scanTimeoutMs = 5000;
 
+		@Option(names = "--model", paramLabel = "NAME",
+				description = "Printer model (e.g. N1) instead of detecting it from the advertised name: the scan then "
+						+ "doesn't wait for the name, and a renamed printer still works.")
+		String model;
+
 		@Override
 		public Integer call() throws Exception {
+			PrinterDefinition configured = null;
+			if (model != null) {
+				configured = PrintTestCommand.resolveDefinition(model);
+				if (configured == null) {
+					return 1;
+				}
+			}
 			try (BleAdapter adapter = openAdapter()) {
-				// requireName(): family detection below needs the advertised name, which some devices
-				// (confirmed: Phomemo Q30, M421) only send in a later packet than the first one seen.
-				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address).requireName(),
-						scanTimeoutMs);
-
-				if (found.isEmpty()) {
-					System.err.println("Device " + address + " not found during scan (run 'discover' first to confirm the address).");
+				BleUtils.BleDeviceResult result = scanForAddress(adapter, address, configured == null, scanTimeoutMs);
+				if (result == null) {
 					return 1;
 				}
 
-				BleUtils.BleDeviceResult result = found.get(0);
-				List<PrinterDefinition> matches = PrinterCatalog.detect(result.getName());
+				PrinterDefinition definition = configured;
+				if (definition == null) {
+					List<PrinterDefinition> matches = PrinterCatalog.detect(result.getName());
 
-				if (matches.isEmpty()) {
-					System.err.println("Could not detect a known printer family from name \"" + result.getName()
-							+ "\" - see 'gatt'/'raw' for protocol-agnostic bring-up instead.");
-					return 1;
-				}
-				if (matches.size() > 1) {
-					System.err.println("Ambiguous match for name \"" + result.getName() + "\": " + matches);
-					return 1;
-				}
+					if (matches.isEmpty()) {
+						System.err.println("Could not detect a known printer family from name \"" + result.getName()
+								+ "\" - see 'gatt'/'raw' for protocol-agnostic bring-up instead.");
+						return 1;
+					}
+					if (matches.size() > 1) {
+						System.err.println("Ambiguous match for name \"" + result.getName() + "\": " + matches);
+						return 1;
+					}
 
-				PrinterDefinition definition = matches.get(0);
-				System.out.println("Detected: " + definition);
+					definition = matches.get(0);
+					System.out.println("Detected: " + definition);
+				}
 
 				LabelPrinter printer;
 				try {
@@ -1158,7 +1191,9 @@ public class Cli implements Runnable {
 		int baud = 115200;
 
 		@Option(names = "--model", paramLabel = "NAME",
-				description = "Printer model for --serial, where there is no advertised name to detect it from, e.g. M421.")
+				description = "Printer model, e.g. M421 or N1. Required with --serial, where there is no advertised name to "
+						+ "detect it from; over BLE it replaces name detection (the scan doesn't wait for the name, and a "
+						+ "renamed printer still works).")
 		String model;
 
 		@Option(names = {"-t", "--scan-timeout"},
@@ -1190,7 +1225,7 @@ public class Cli implements Runnable {
 
 		@Option(names = "--top-offset-mm",
 				description = "Move the image along the feed direction, in mm: positive starts it later, negative earlier "
-						+ "(m110 family only; default: ${DEFAULT-VALUE}).")
+						+ "(m110 and Niimbot families; default: ${DEFAULT-VALUE}).")
 		double topOffsetMm = 0;
 
 		@Option(names = "--top-offset-changes-length",
@@ -1245,19 +1280,19 @@ public class Cli implements Runnable {
 				return 1;
 			}
 
-			try (BleAdapter adapter = openAdapter()) {
-				// requireName(): family detection below needs the advertised name, which some devices
-				// (confirmed: Phomemo Q30, M421) only send in a later packet than the first one seen.
-				List<BleUtils.BleDeviceResult> found = BleUtils.scan(adapter, new ScanFilter().withAddress(address).requireName(),
-						scanTimeoutMs);
-
-				if (found.isEmpty()) {
-					System.err.println("Device " + address + " not found during scan (run 'discover' first to confirm the address).");
+			PrinterDefinition configured = null;
+			if (model != null) {
+				configured = resolveDefinition(model);
+				if (configured == null) {
 					return 1;
 				}
-
-				BleUtils.BleDeviceResult result = found.get(0);
-				PrinterDefinition definition = resolveDefinition(result.getName());
+			}
+			try (BleAdapter adapter = openAdapter()) {
+				BleUtils.BleDeviceResult result = scanForAddress(adapter, address, configured == null, scanTimeoutMs);
+				if (result == null) {
+					return 1;
+				}
+				PrinterDefinition definition = configured != null ? configured : resolveDefinition(result.getName());
 				if (definition == null) {
 					return 1;
 				}
@@ -1266,7 +1301,7 @@ public class Cli implements Runnable {
 		}
 
 		/** The single catalog entry {@code name} resolves to, or {@code null} (after saying why) if there isn't exactly one. */
-		private static PrinterDefinition resolveDefinition(String name) {
+		static PrinterDefinition resolveDefinition(String name) {
 			List<PrinterDefinition> matches = PrinterCatalog.detect(name);
 			if (matches.isEmpty()) {
 				System.err.println("Could not detect a known printer family from name \"" + name + "\".");

@@ -6,6 +6,7 @@ import java.util.concurrent.TimeoutException;
 
 import cz.bliksoft.ptlabelprint.image.BufferedImagePixelSource;
 import cz.bliksoft.ptlabelprint.image.ImageRotation;
+import cz.bliksoft.ptlabelprint.image.ImageShift;
 import cz.bliksoft.ptlabelprint.image.PixelSource;
 import cz.bliksoft.ptlabelprint.image.PrinterCapabilities;
 import cz.bliksoft.ptlabelprint.protocol.Transport;
@@ -80,7 +81,11 @@ public class NiimbotLabelPrinter extends AbstractLabelPrinter {
 	 * See {@link LabelPrinter}'s own javadoc for the full rotation/density/copies algorithm. This is
 	 * a direct generalization of what {@code Cli.NiimbotPrintTestCommand} already does - model/task
 	 * lookup, {@link PrintOptions} construction, encode, print - plus the mandatory
-	 * {@link PrintDirection} rotation that command never applied.
+	 * {@link PrintDirection} rotation that command never applied. {@link PrintJob#getTopOffsetMm()}
+	 * moves the image along the feed direction, applied after every rotation - the same thing
+	 * Niimbot's own app (and niimblue) do for their print offset, which they keep app-side too: no
+	 * printer command for it exists in niimbluelib. {@link PrintJob#getMediaSideGapMm()} isn't
+	 * honoured here.
 	 */
 	@Override
 	public void print(BufferedImage image, PrintJob job) throws IOException, TimeoutException {
@@ -98,6 +103,12 @@ public class NiimbotLabelPrinter extends AbstractLabelPrinter {
 		if (mandatoryRotate90) {
 			rotated = ImageRotation.rotate90Clockwise(rotated);
 		}
+		// Rows are the feed direction from here on, whatever the model's print direction.
+		int topPixels = (int) Math.round(job.getTopOffsetMm() * meta.getDpi() / 25.4);
+		if (Math.abs(topPixels) >= rotated.getHeight()) {
+			throw new IllegalArgumentException("Top offset " + job.getTopOffsetMm() + " mm is longer than the image");
+		}
+		rotated = ImageShift.shiftDown(rotated, topPixels, job.isTopOffsetKeepsLength());
 
 		EncodedImage encoded = NiimbotImageEncoder.encode(rotated, PageColorType.SINGLE_COLOR);
 

@@ -29,11 +29,12 @@ public final class PrinterCatalog {
 	private static final List<PrinterDefinition> ENTRIES = Collections.unmodifiableList(Arrays.asList(
 			// Niimbot-branded printers (cz.bliksoft.ptlabelprint.protocol.niimbot). Each name prefix
 			// is that model's niimbluelib PrinterModel enum name - confirmed against real hardware
-			// for D11_H ("D11_H-G412010570") and M2_H ("M2_H-I814050044") only. The other 75 entries
-			// are ported into PrinterModels.java from niimbluelib's verbatim vendor id[] data, but
+			// for D11_H ("D11_H-G412010570"), M2_H ("M2_H-I814050044") and N1 ("N1-I529020317") only.
+			// The other 74 entries are ported into PrinterModels.java from niimbluelib's verbatim
+			// vendor id[] data, but
 			// their name-prefix here is *guessed* from the enum-naming convention (prefix == bare
 			// enum name), not an observed device advertisement - unlike PrinterModelMeta.getIds(),
-			// which is real vendor data. Treat every prefix below other than D11_H/M2_H as unverified
+			// which is real vendor data. Treat every prefix below other than D11_H/M2_H/N1 as unverified
 			// until a real device confirms it; catalogHasNoAmbiguousEntriesAsShipped() in
 			// PrinterCatalogTest is the mechanical check that they don't collide with each other or
 			// with the Phomemo entries below - it doesn't and can't confirm they're the *right*
@@ -100,7 +101,7 @@ public final class PrinterCatalog {
 			def("M3", PrinterFamily.NIIMBOT, false, "M3"),
 			def("MP3K", PrinterFamily.NIIMBOT, false, "MP3K"),
 			def("MP3K_W", PrinterFamily.NIIMBOT, false, "MP3K_W"),
-			def("N1", PrinterFamily.NIIMBOT, false, "N1"),
+			def("N1", PrinterFamily.NIIMBOT, true, "N1"),
 			def("P1", PrinterFamily.NIIMBOT, false, "P1"),
 			def("P18", PrinterFamily.NIIMBOT, false, "P18"),
 			def("P1S", PrinterFamily.NIIMBOT, false, "P1S"),

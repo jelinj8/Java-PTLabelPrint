@@ -254,7 +254,10 @@ public class PacketParser {
 		}
 		r.end();
 
-		int[] invertedLidModels = {512, 514, 513, 2304, 1792, 3584, 5120, 2560, 3840, 4352, 272, 273, 274};
+		// niimbluelib's list, plus 3586 (N1) - not in niimbluelib's list, but confirmed on a real N1:
+		// the byte reads 01 with the lid closed and 00 with it open, the same way round as its
+		// neighbour 3584 (B18).
+		int[] invertedLidModels = {512, 514, 513, 2304, 1792, 3584, 3586, 5120, 2560, 3840, 4352, 272, 273, 274};
 
 		if (modelId != null && info.getLidClosed() != null) {
 			for (int m : invertedLidModels) {

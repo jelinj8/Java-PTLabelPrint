@@ -7,6 +7,7 @@ import java.util.function.IntConsumer;
 import cz.bliksoft.ptlabelprint.image.BufferedImagePixelSource;
 import cz.bliksoft.ptlabelprint.image.CanvasResize;
 import cz.bliksoft.ptlabelprint.image.ImageRotation;
+import cz.bliksoft.ptlabelprint.image.ImageShift;
 import cz.bliksoft.ptlabelprint.image.PixelSource;
 import cz.bliksoft.ptlabelprint.image.PrinterCapabilities;
 import cz.bliksoft.ptlabelprint.protocol.Transport;
@@ -91,77 +92,11 @@ public class PhomemoM110LabelPrinter extends PhomemoLabelPrinter {
 			throw new IllegalArgumentException("Top offset " + job.getTopOffsetMm() + " mm is longer than the image");
 		}
 		RasterImage raster = RasterImage.fromPixelSource(
-				shiftDown(shiftRight(fitted, shiftPixels), topPixels, job.isTopOffsetKeepsLength()));
+				ImageShift.shiftDown(ImageShift.shiftRight(fitted, shiftPixels), topPixels, job.isTopOffsetKeepsLength()));
 
 		for (int i = 0; i < job.getCopies(); i++) {
 			M110Printer.print(transport, raster, density, job.isContinuousMedia(), null, linkInfo, null);
 		}
-	}
-
-	/**
-	 * {@code source} moved {@code pixels} columns to the right by adding blank columns on the left - or,
-	 * if negative, to the left by dropping that many columns from its left edge.
-	 */
-	private static PixelSource shiftRight(PixelSource source, int pixels) {
-		if (pixels == 0) {
-			return source;
-		}
-		return new PixelSource() {
-			@Override
-			public int getWidth() {
-				return source.getWidth() + pixels;
-			}
-
-			@Override
-			public int getHeight() {
-				return source.getHeight();
-			}
-
-			@Override
-			public boolean isBlack(int x, int y) {
-				return x >= pixels && source.isBlack(x - pixels, y);
-			}
-
-			@Override
-			public boolean isRed(int x, int y) {
-				return x >= pixels && source.isRed(x - pixels, y);
-			}
-		};
-	}
-
-	/**
-	 * {@code source} moved {@code pixels} rows later in the feed direction (earlier if negative). With
-	 * {@code keepLength} the result is as long as {@code source} - rows pushed past either end are
-	 * lost and the vacated end is blank; without it the length changes by {@code pixels} instead.
-	 */
-	private static PixelSource shiftDown(PixelSource source, int pixels, boolean keepLength) {
-		if (pixels == 0) {
-			return source;
-		}
-		int height = keepLength ? source.getHeight() : source.getHeight() + pixels;
-		return new PixelSource() {
-			@Override
-			public int getWidth() {
-				return source.getWidth();
-			}
-
-			@Override
-			public int getHeight() {
-				return height;
-			}
-
-			@Override
-			public boolean isBlack(int x, int y) {
-				int sy = y - pixels;
-				return sy >= 0 && sy < source.getHeight() && source.isBlack(x, sy);
-			}
-
-			@Override
-			public boolean isRed(int x, int y) {
-				int sy = y - pixels;
-				return sy >= 0 && sy < source.getHeight() && source.isRed(x, sy);
-			}
-		};
 	}
 
 	/** Center-crops {@code source} to at most {@code maxWidth} - {@link CanvasResize} only works on height, hence the rotate round trip. */
