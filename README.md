@@ -79,7 +79,7 @@ Things to know about the M421:
   sits a little in from the edge of its backing paper (about 2.5mm on a 102mm stock tested, against 1mm on ordinary stock), which puts
   the print that far too far left. The printer itself starts about 1mm in, so ordinary stock
   prints in place; for a wider gap, `PrintJob#setMediaSideGapMm` (CLI `--side-gap-mm`) moves the
-  image that many extra millimetres in (default: none). It is honoured by this family only. `setTopOffsetMm` (`--top-offset-mm`, positive = later,
+  image that many extra millimetres in (default: none). It is honoured by this family only. `setLeadOffsetMm` (`--lead-offset-mm`, positive = later,
   negative = earlier) does the same along the feed direction, for stock on which the print starts
   slightly early or late.
 - **Small labels stop short of the tear edge.** With 40x20mm labels the print sits slightly low,

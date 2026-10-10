@@ -144,10 +144,10 @@ file now also includes the N1):
   A gap calibration didn't change that lean. **Print offset**: Niimbot's own app has one, but it's
   applied app-side (setting it changed nothing in our prints, and niimbluelib has no such command;
   niimblue, too, just shifts the image), so `NiimbotLabelPrinter` now honours
-  `PrintJob#getTopOffsetMm()`/`isTopOffsetKeepsLength()` like the m110 family does (shared
+  `PrintJob#getLeadOffsetMm()`/`isLeadOffsetKeepsLength()` like the m110 family does (shared
   `image.ImageShift`), applied after every rotation, so rows = feed direction for either
   `PrintDirection`. Not set by default (unset = no shift, nothing cropped). Hardware-confirmed:
-  `print-test --pattern-mm 30x12 --top-offset-mm -1` moved the print the same way as the app's -1
+  `print-test --pattern-mm 30x12 --lead-offset-mm -1` moved the print the same way as the app's -1
   and centred it on this 14x30 stock, nothing visibly cut (a negative offset drops rows from the
   *start* - here the pattern's blank margin). `mediaSideGapMm` is still m110-only.
   During page end the printer sends unsolicited `0xd3` packets (`00 c7`/`00 ef` = rows 199/239,
@@ -525,14 +525,16 @@ through this transport means "write the whole raster at once".
   on that same print the frame had almost no margin at the top and ~2mm at the bottom (nominal 1
   and 1), i.e. the image starts ~1mm early. The user attributes it to the gap sensor's alignment.
   The 40x20 stock showed the opposite (print slightly low), so it's media-dependent too.
-  `PrintJob#setTopOffsetMm` (CLI `--top-offset-mm`, signed: positive = later/down, negative =
+  `PrintJob#setLeadOffsetMm` (CLI `--lead-offset-mm`; "lead", not "top", since the feed runs
+  along the label's height or width depending on the print direction - renamed from `topOffsetMm`
+  in 0.6.0; signed: positive = later/down, negative =
   earlier/up) now moves the image along the feed direction, **m110 family only** like the left
   margin. By default the job keeps its length - rows pushed past one end are cut, the other end is
-  blank; `setTopOffsetKeepsLength(false)` (CLI `--top-offset-changes-length`) lengthens/shortens the
+  blank; `setLeadOffsetKeepsLength(false)` (CLI `--lead-offset-changes-length`) lengthens/shortens the
   job by the offset instead. On the 40x20 stock the vertical position turned out centred with no
   offset (baseline, two consecutive labels). Two mechanism tests were then printed there, two
-  consecutive labels each, `--side-gap-mm 1 --top-offset-mm 2`: once keeping the length, once with
-  `--top-offset-changes-length` (a 22mm job on 20mm labels). User-reported result: **all four
+  consecutive labels each, `--side-gap-mm 1 --lead-offset-mm 2`: once keeping the length, once with
+  `--lead-offset-changes-length` (a 22mm job on 20mm labels). User-reported result: **all four
   labels came out the same** - the offset moved the print down in both modes, and the 2mm-over-long
   job did **not** upset the feed (no skipped label, no drift on the following one); what it pushed
   past the label's end simply didn't appear. Keeping the length stays the default anyway - only a
@@ -567,7 +569,7 @@ uncommitted there too, each building against a **locally installed** `ptlabelpri
 - **BSToolbox-print** (`lbl.raster.PtLabelPrintRasterTarget` / `lbl.ptlabelprint.
   LocalTransportConnection`): advanced property `transport` = `BLE` (default) or `SERIAL`
   (`comPort`, `baudRate`, `printerModel` - resolved through `PrinterCatalog.detectUnambiguous`), and
-  print settings `mediaSideGapMm`, `printTopOffsetMm`, `printTopOffsetKeepsLength` mapped onto
+  print settings `mediaSideGapMm`, `printLeadOffsetMm`, `printLeadOffsetKeepsLength` mapped onto
   `PrintJob`. Hardware-checked: its own connection class opened the M421 on COM31 and printed a
   40x20 label.
 - **BSToolbox-jfx-print**: editable combos for `comPort` (this machine's serial ports with their
@@ -580,8 +582,8 @@ uncommitted there too, each building against a **locally installed** `ptlabelpri
   `printerModel=M421` printed correctly from the designer (template -> ZPL emulator ->
   BSToolbox-print -> `SerialTransport` -> M421).
 
-Consequence for API changes here: `PrintJob`'s `mediaSideGapMm` / `topOffsetMm` /
-`topOffsetKeepsLength`, `PrinterCatalog.all()` + `PrinterDefinition.getNamePrefixes()`, and
+Consequence for API changes here: `PrintJob`'s `mediaSideGapMm` / `leadOffsetMm` /
+`leadOffsetKeepsLength`, `PrinterCatalog.all()` + `PrinterDefinition.getNamePrefixes()`, and
 `SerialTransport(String, int)` now have an external consumer.
 
 ### CLI bridge server mode (`--bridge-port`)

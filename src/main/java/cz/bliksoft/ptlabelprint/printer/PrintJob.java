@@ -13,8 +13,8 @@ public class PrintJob {
 	 *  why the auto-fit-rotate behavior must be requested explicitly, not assumed by default. */
 	private Rotation rotation = Rotation.NONE;
 	private Double mediaSideGapMm;
-	private double topOffsetMm;
-	private boolean topOffsetKeepsLength = true;
+	private double leadOffsetMm;
+	private boolean leadOffsetKeepsLength = true;
 
 	public int getCopies() {
 		return copies;
@@ -89,37 +89,39 @@ public class PrintJob {
 
 	/**
 	 * Moves the image along the feed direction, in mm (default 0): positive starts it later (further
-	 * down the label), negative earlier. For media on which the printer's own gap detection puts the
+	 * down the label), negative earlier. "Lead", not "top": the feed runs along whichever side of the
+	 * label the printer's print direction makes it (Niimbot {@code PrintDirection.LEFT} feeds along
+	 * the label's width); applied after every rotation, so it always means the feed axis. For media on which the printer's own gap detection puts the
 	 * start of the print slightly off - seen on a Phomemo M421 both ways, about 1mm early on one
 	 * stock and slightly late on another, so like {@link #getMediaSideGapMm()} it's per job.
-	 * {@link #isTopOffsetKeepsLength()} decides what happens at the other end.
+	 * {@link #isLeadOffsetKeepsLength()} decides what happens at the other end.
 	 *
 	 * <p>
 	 * Honoured by {@code PhomemoM110LabelPrinter} and {@code NiimbotLabelPrinter}; the other families
 	 * ignore it.
 	 */
-	public double getTopOffsetMm() {
-		return topOffsetMm;
+	public double getLeadOffsetMm() {
+		return leadOffsetMm;
 	}
 
-	public PrintJob setTopOffsetMm(double topOffsetMm) {
-		this.topOffsetMm = topOffsetMm;
+	public PrintJob setLeadOffsetMm(double leadOffsetMm) {
+		this.leadOffsetMm = leadOffsetMm;
 		return this;
 	}
 
 	/**
-	 * true (default): the job keeps the image's own length - whatever {@link #getTopOffsetMm()} pushes
+	 * true (default): the job keeps the image's own length - whatever {@link #getLeadOffsetMm()} pushes
 	 * past one end is cut off, and the other end is filled with blank rows. false: the job's length
 	 * changes by the offset instead - longer for a positive one (blank rows added at the top, nothing
 	 * cut), shorter for a negative one. A job longer than the label can run into the gap, which is
 	 * why keeping the length is the default.
 	 */
-	public boolean isTopOffsetKeepsLength() {
-		return topOffsetKeepsLength;
+	public boolean isLeadOffsetKeepsLength() {
+		return leadOffsetKeepsLength;
 	}
 
-	public PrintJob setTopOffsetKeepsLength(boolean topOffsetKeepsLength) {
-		this.topOffsetKeepsLength = topOffsetKeepsLength;
+	public PrintJob setLeadOffsetKeepsLength(boolean leadOffsetKeepsLength) {
+		this.leadOffsetKeepsLength = leadOffsetKeepsLength;
 		return this;
 	}
 }

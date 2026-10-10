@@ -1223,15 +1223,15 @@ public class Cli implements Runnable {
 						+ "the printer aligns media to (m110 family only; default: none).")
 		Double sideGapMm;
 
-		@Option(names = "--top-offset-mm",
+		@Option(names = "--lead-offset-mm",
 				description = "Move the image along the feed direction, in mm: positive starts it later, negative earlier "
 						+ "(m110 and Niimbot families; default: ${DEFAULT-VALUE}).")
-		double topOffsetMm = 0;
+		double leadOffsetMm = 0;
 
-		@Option(names = "--top-offset-changes-length",
-				description = "With --top-offset-mm: make the job longer/shorter by the offset instead of keeping its length "
+		@Option(names = "--lead-offset-changes-length",
+				description = "With --lead-offset-mm: make the job longer/shorter by the offset instead of keeping its length "
 						+ "and cutting off what is pushed past the end.")
-		boolean topOffsetChangesLength;
+		boolean leadOffsetChangesLength;
 
 		@Option(names = {"-p", "--pattern-mm"}, paramLabel = "WIDTHxHEIGHT",
 				description = "Print a generated alignment pattern of this size in mm, e.g. 40x20 (outline, bar on the left, "
@@ -1362,8 +1362,8 @@ public class Cli implements Runnable {
 						.setContinuousMedia(continuous)
 						.setDensity(density)
 						.setMediaSideGapMm(sideGapMm)
-						.setTopOffsetMm(topOffsetMm)
-						.setTopOffsetKeepsLength(!topOffsetChangesLength)
+						.setLeadOffsetMm(leadOffsetMm)
+						.setLeadOffsetKeepsLength(!leadOffsetChangesLength)
 						.setRotation(parsedRotation);
 
 				System.out.println("Printing " + img.getWidth() + "x" + img.getHeight() + "px (copies=" + copies

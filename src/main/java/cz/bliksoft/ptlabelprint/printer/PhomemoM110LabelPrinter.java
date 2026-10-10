@@ -62,7 +62,7 @@ public class PhomemoM110LabelPrinter extends PhomemoLabelPrinter {
 	 * mandatory rotation, and - unlike {@code d-series} - rows are sent at the image's own width, not
 	 * padded to the printhead's: only an image wider than the printhead is touched (center-cropped).
 	 * The printer aligns media to the left, so the image starts at the first printhead dot unless
-	 * {@link PrintJob#getMediaSideGapMm()} moves it further in; {@link PrintJob#getTopOffsetMm()}
+	 * {@link PrintJob#getMediaSideGapMm()} moves it further in; {@link PrintJob#getLeadOffsetMm()}
 	 * moves it along the feed direction.
 	 * {@code m110} has no native multi-copy concept - each copy is an independent print, and each one
 	 * waits for the printer to finish (see {@link M110Printer}) before the next starts or this returns.
@@ -87,12 +87,12 @@ public class PhomemoM110LabelPrinter extends PhomemoLabelPrinter {
 			throw new IllegalArgumentException("Media side gap " + job.getMediaSideGapMm() + " mm moves the image off the printhead");
 		}
 		PixelSource fitted = cropWidth(resolved, meta.getPrintheadPixels() - Math.max(shiftPixels, 0));
-		int topPixels = (int) Math.round(job.getTopOffsetMm() * meta.getDpi() / 25.4);
-		if (Math.abs(topPixels) >= fitted.getHeight()) {
-			throw new IllegalArgumentException("Top offset " + job.getTopOffsetMm() + " mm is longer than the image");
+		int leadPixels = (int) Math.round(job.getLeadOffsetMm() * meta.getDpi() / 25.4);
+		if (Math.abs(leadPixels) >= fitted.getHeight()) {
+			throw new IllegalArgumentException("Lead offset " + job.getLeadOffsetMm() + " mm is longer than the image");
 		}
 		RasterImage raster = RasterImage.fromPixelSource(
-				ImageShift.shiftDown(ImageShift.shiftRight(fitted, shiftPixels), topPixels, job.isTopOffsetKeepsLength()));
+				ImageShift.shiftDown(ImageShift.shiftRight(fitted, shiftPixels), leadPixels, job.isLeadOffsetKeepsLength()));
 
 		for (int i = 0; i < job.getCopies(); i++) {
 			M110Printer.print(transport, raster, density, job.isContinuousMedia(), null, linkInfo, null);

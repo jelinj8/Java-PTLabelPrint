@@ -252,10 +252,10 @@ class PhomemoM110LabelPrinterTest {
 	}
 
 	@Test
-	void positiveTopOffsetKeepingLengthShiftsDownAndCutsTheBottom() throws Exception {
+	void positiveLeadOffsetKeepingLengthShiftsDownAndCutsTheBottom() throws Exception {
 		RecordingTransport transport = new RecordingTransport();
 		// 1mm at 203 DPI = 8 rows
-		m421(transport).print(endMarkers(), new PrintJob().setTopOffsetMm(1));
+		m421(transport).print(endMarkers(), new PrintJob().setLeadOffsetMm(1));
 
 		int[] rows = rows(transport);
 		assertEquals(24, rows.length);
@@ -265,9 +265,9 @@ class PhomemoM110LabelPrinterTest {
 	}
 
 	@Test
-	void positiveTopOffsetChangingLengthKeepsTheBottom() throws Exception {
+	void positiveLeadOffsetChangingLengthKeepsTheBottom() throws Exception {
 		RecordingTransport transport = new RecordingTransport();
-		m421(transport).print(endMarkers(), new PrintJob().setTopOffsetMm(1).setTopOffsetKeepsLength(false));
+		m421(transport).print(endMarkers(), new PrintJob().setLeadOffsetMm(1).setLeadOffsetKeepsLength(false));
 
 		int[] rows = rows(transport);
 		assertEquals(32, rows.length);
@@ -276,9 +276,9 @@ class PhomemoM110LabelPrinterTest {
 	}
 
 	@Test
-	void negativeTopOffsetShiftsUp() throws Exception {
+	void negativeLeadOffsetShiftsUp() throws Exception {
 		RecordingTransport keeping = new RecordingTransport();
-		m421(keeping).print(endMarkers(), new PrintJob().setTopOffsetMm(-1));
+		m421(keeping).print(endMarkers(), new PrintJob().setLeadOffsetMm(-1));
 		int[] rows = rows(keeping);
 		assertEquals(24, rows.length);
 		assertEquals(0x00, rows[0]); // the top marker was pushed off the start
@@ -286,7 +286,7 @@ class PhomemoM110LabelPrinterTest {
 		assertEquals(0x00, rows[23]);
 
 		RecordingTransport changing = new RecordingTransport();
-		m421(changing).print(endMarkers(), new PrintJob().setTopOffsetMm(-1).setTopOffsetKeepsLength(false));
+		m421(changing).print(endMarkers(), new PrintJob().setLeadOffsetMm(-1).setLeadOffsetKeepsLength(false));
 		rows = rows(changing);
 		assertEquals(16, rows.length);
 		assertEquals(0xff, rows[15]);
