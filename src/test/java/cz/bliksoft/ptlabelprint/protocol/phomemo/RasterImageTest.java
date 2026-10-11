@@ -16,11 +16,12 @@ class RasterImageTest {
 	@Test
 	void rotatesSinglePixelToExpectedPosition() {
 		// 8px wide (1 byte), 1 row tall; only the leftmost pixel (bit 7) is set.
-		RasterImage image = new RasterImage(new byte[] {(byte) 0x80}, 1, 1);
+		RasterImage image = new RasterImage(new byte[] { (byte) 0x80 }, 1, 1);
 
 		RasterImage rotated = image.rotate90Clockwise();
 
-		// After 90 deg CW: new width = old height = 1px (1 byte), new height = old width = 8 rows.
+		// After 90 deg CW: new width = old height = 1px (1 byte), new height = old
+		// width = 8 rows.
 		assertEquals(1, rotated.getWidthBytes());
 		assertEquals(8, rotated.getHeightLines());
 
@@ -32,7 +33,7 @@ class RasterImageTest {
 	@Test
 	void rotatingTwiceMoreRotatesAnAsymmetricPattern() {
 		// 8px wide, 2 rows: row0 = 0xF0 (left half set), row1 = 0x00
-		RasterImage image = new RasterImage(new byte[] {(byte) 0xf0, 0x00}, 1, 2);
+		RasterImage image = new RasterImage(new byte[] { (byte) 0xf0, 0x00 }, 1, 2);
 
 		RasterImage rotated = image.rotate90Clockwise();
 

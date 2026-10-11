@@ -13,39 +13,52 @@ import cz.bliksoft.javautils.ble.BleService;
 import cz.bliksoft.javautils.ble.ScanFilter;
 
 /**
- * BLE transport built on BSToolbox-BLE, shared across protocol families (moved here from
- * {@code protocol.niimbot} once {@code protocol.phomemo} needed it too - the channel-discovery
- * logic below isn't brand- or protocol-specific). Ported from niimbluelib's
- * {@code NiimbotBluetoothClient} (src/client/bluetooth_impl.ts): discover services and use
- * whichever characteristic supports both {@code NOTIFY} and {@code WRITE_WITHOUT_RESPONSE} for
- * both directions - this is how Niimbot-branded printers expose their channel.
+ * BLE transport built on BSToolbox-BLE, shared across protocol families (moved
+ * here from {@code protocol.niimbot} once {@code protocol.phomemo} needed it
+ * too - the channel-discovery logic below isn't brand- or protocol-specific).
+ * Ported from niimbluelib's {@code NiimbotBluetoothClient}
+ * (src/client/bluetooth_impl.ts): discover services and use whichever
+ * characteristic supports both {@code NOTIFY} and
+ * {@code WRITE_WITHOUT_RESPONSE} for both directions - this is how
+ * Niimbot-branded printers expose their channel.
  *
  * <p>
- * <b>Confirmed on real hardware this doesn't cover every printer</b>: a Phomemo Q30 instead splits
- * the channel into two separate characteristics under one service (observed: service
- * {@code 0000ff00-...}, write+write-without-response on {@code 0000ff02-...}, notify on
- * {@code 0000ff03-...} - a common vendor-specific BLE UART pattern, unrelated to Niimbot's own
- * service UUID below, which the Q30 doesn't advertise or expose at all, and confirmed to match
- * phomymo's own {@code BLE.SERVICE_UUID}/{@code WRITE_CHAR_UUID}/{@code NOTIFY_CHAR_UUID}
- * constants for its Phomemo `d-series` protocol). This class therefore falls back to pairing the
- * first NOTIFY-capable and first WRITE(_WITHOUT_RESPONSE)-capable characteristics within one
- * service when no single characteristic offers both - use the CLI's {@code gatt} command to
- * inspect an unfamiliar device's actual GATT layout before assuming either shape.
+ * <b>Confirmed on real hardware this doesn't cover every printer</b>: a Phomemo
+ * Q30 instead splits the channel into two separate characteristics under one
+ * service (observed: service {@code 0000ff00-...}, write+write-without-response
+ * on {@code 0000ff02-...}, notify on {@code 0000ff03-...} - a common
+ * vendor-specific BLE UART pattern, unrelated to Niimbot's own service UUID
+ * below, which the Q30 doesn't advertise or expose at all, and confirmed to
+ * match phomymo's own
+ * {@code BLE.SERVICE_UUID}/{@code WRITE_CHAR_UUID}/{@code NOTIFY_CHAR_UUID}
+ * constants for its Phomemo `d-series` protocol). This class therefore falls
+ * back to pairing the first NOTIFY-capable and first
+ * WRITE(_WITHOUT_RESPONSE)-capable characteristics within one service when no
+ * single characteristic offers both - use the CLI's {@code gatt} command to
+ * inspect an unfamiliar device's actual GATT layout before assuming either
+ * shape.
  *
  * <p>
- * The caller is responsible for discovering the {@link BlePeripheral} via a prior
- * {@code BleAdapter.scan()} - {@link BlePeripheral} itself only supports {@code connect()} on an
- * already-discovered address, per BSToolbox-BLE's own contract. {@link #scanFilter()} matches
- * Niimbot's own advertised service UUID specifically (useful for discovering Niimbot-branded
- * printers, not for Phomemo or other families - per the Q30 finding above, use the CLI's
+ * The caller is responsible for discovering the {@link BlePeripheral} via a
+ * prior {@code BleAdapter.scan()} - {@link BlePeripheral} itself only supports
+ * {@code connect()} on an already-discovered address, per BSToolbox-BLE's own
+ * contract. {@link #scanFilter()} matches Niimbot's own advertised service UUID
+ * specifically (useful for discovering Niimbot-branded printers, not for
+ * Phomemo or other families - per the Q30 finding above, use the CLI's
  * unfiltered {@code scan} or a name-based filter for those instead).
  */
 public class BleTransport implements Transport {
 
-	/** Niimbot's own advertised GATT service UUID - narrows discovery for genuine Niimbot units. Not useful for other protocol families (see class javadoc). */
+	/**
+	 * Niimbot's own advertised GATT service UUID - narrows discovery for genuine
+	 * Niimbot units. Not useful for other protocol families (see class javadoc).
+	 */
 	public static final String SERVICE_UUID = "e7810a71-73ae-499d-8c15-faa9aef0c3f2";
 
-	/** The Phomemo split-channel service (write {@code ff02}, notify {@code ff03} - see class javadoc). */
+	/**
+	 * The Phomemo split-channel service (write {@code ff02}, notify {@code ff03} -
+	 * see class javadoc).
+	 */
 	public static final String PHOMEMO_SERVICE_UUID = "0000ff00-0000-1000-8000-00805f9b34fb";
 
 	private final BlePeripheral peripheral;
@@ -59,7 +72,10 @@ public class BleTransport implements Transport {
 		this.peripheral = peripheral;
 	}
 
-	/** A scan filter matching Niimbot's own advertised GATT service, for use with {@code BleAdapter.scan()}/{@code BleUtils}. */
+	/**
+	 * A scan filter matching Niimbot's own advertised GATT service, for use with
+	 * {@code BleAdapter.scan()}/{@code BleUtils}.
+	 */
 	public static ScanFilter scanFilter() {
 		return new ScanFilter().withServiceUuid(SERVICE_UUID);
 	}
@@ -95,11 +111,12 @@ public class BleTransport implements Transport {
 	}
 
 	/**
-	 * First pass: a genuine Niimbot-style single characteristic with both NOTIFY and
-	 * WRITE_WITHOUT_RESPONSE. Second pass (only if the first finds nothing): the first
-	 * NOTIFY-capable and first WRITE(_WITHOUT_RESPONSE)-capable characteristics within one
-	 * service, for split-channel devices like the Phomemo Q30 (see class javadoc). Both passes see
-	 * the known protocol services first ({@link #preferKnownChannelServices}).
+	 * First pass: a genuine Niimbot-style single characteristic with both NOTIFY
+	 * and WRITE_WITHOUT_RESPONSE. Second pass (only if the first finds nothing):
+	 * the first NOTIFY-capable and first WRITE(_WITHOUT_RESPONSE)-capable
+	 * characteristics within one service, for split-channel devices like the
+	 * Phomemo Q30 (see class javadoc). Both passes see the known protocol services
+	 * first ({@link #preferKnownChannelServices}).
 	 */
 	private void findChannel(List<BleService> discovered) {
 		List<BleService> services = preferKnownChannelServices(discovered);
@@ -138,12 +155,14 @@ public class BleTransport implements Transport {
 	}
 
 	/**
-	 * Moves the known protocol services ({@link #SERVICE_UUID}, then {@link #PHOMEMO_SERVICE_UUID})
-	 * to the front, keeping the rest in discovery order. Discovery order is platform-specific - BlueZ
-	 * reports services by handle - and confirmed on real hardware (Niimbot M2 over BlueZ): its
-	 * unrelated vendor service {@code 0000ff10-...} has a NOTIFY+WRITE_WITHOUT_RESPONSE
-	 * characteristic {@code ff11} listed before Niimbot's own service, so taking the first match
-	 * wrote to {@code ff11} and the printer never answered.
+	 * Moves the known protocol services ({@link #SERVICE_UUID}, then
+	 * {@link #PHOMEMO_SERVICE_UUID}) to the front, keeping the rest in discovery
+	 * order. Discovery order is platform-specific - BlueZ reports services by
+	 * handle - and confirmed on real hardware (Niimbot M2 over BlueZ): its
+	 * unrelated vendor service {@code 0000ff10-...} has a
+	 * NOTIFY+WRITE_WITHOUT_RESPONSE characteristic {@code ff11} listed before
+	 * Niimbot's own service, so taking the first match wrote to {@code ff11} and
+	 * the printer never answered.
 	 */
 	static List<BleService> preferKnownChannelServices(List<BleService> services) {
 		List<BleService> ordered = new ArrayList<>(services);
@@ -187,13 +206,15 @@ public class BleTransport implements Transport {
 	}
 
 	/**
-	 * Overrides the interface default with a single round trip covering the whole transfer - see
-	 * {@link Transport#writeStream}'s own doc for why that matters over a remote-adapter link.
+	 * Overrides the interface default with a single round trip covering the whole
+	 * transfer - see {@link Transport#writeStream}'s own doc for why that matters
+	 * over a remote-adapter link.
 	 */
 	@Override
 	public void writeStream(byte[] data, int chunkSize, long chunkDelayMs) throws IOException {
 		try {
-			peripheral.writeCharacteristicStream(channelServiceUuid, writeCharUuid, data, false, chunkSize, chunkDelayMs);
+			peripheral.writeCharacteristicStream(channelServiceUuid, writeCharUuid, data, false, chunkSize,
+					chunkDelayMs);
 		} catch (BleException e) {
 			throw new IOException("BLE write failed: " + e.getMessage(), e);
 		}

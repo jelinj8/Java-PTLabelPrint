@@ -17,18 +17,19 @@ import java.util.zip.CRC32;
 import cz.bliksoft.ptlabelprint.protocol.Transport;
 
 /**
- * High-level, typed API for a Niimbot-branded printer (D11_H, M2 - <b>not</b> Phomemo's D/Q-series,
- * which speak an unrelated protocol; see this package's own package-info). Combines what
- * niimbluelib splits across {@code NiimbotAbstractClient} and {@code NiimbotProtocol} - a single
- * concrete class here since this port doesn't need client-type polymorphism at this layer (that's
- * {@link Transport}'s job instead).
+ * High-level, typed API for a Niimbot-branded printer (D11_H, M2 - <b>not</b>
+ * Phomemo's D/Q-series, which speak an unrelated protocol; see this package's
+ * own package-info). Combines what niimbluelib splits across
+ * {@code NiimbotAbstractClient} and {@code NiimbotProtocol} - a single concrete
+ * class here since this port doesn't need client-type polymorphism at this
+ * layer (that's {@link Transport}'s job instead).
  *
  * <p>
- * Connect/negotiate/info/heartbeat/misc-config commands, plus the low-level page/print
- * start-end and bitmap-row primitives {@link D110V4PrintTask} builds the one print flow this
- * project has ported on top of. Not thread-safe for concurrent calls from multiple threads
- * (mirrors niimbluelib's single in-flight request assumption, enforced here with a
- * {@link ReentrantLock}).
+ * Connect/negotiate/info/heartbeat/misc-config commands, plus the low-level
+ * page/print start-end and bitmap-row primitives {@link D110V4PrintTask} builds
+ * the one print flow this project has ported on top of. Not thread-safe for
+ * concurrent calls from multiple threads (mirrors niimbluelib's single
+ * in-flight request assumption, enforced here with a {@link ReentrantLock}).
  */
 public class NiimbotDevice {
 
@@ -42,14 +43,20 @@ public class NiimbotDevice {
 	private volatile List<ResponseCommandId> awaitedIds;
 	private byte[] packetBuf = new byte[0];
 	private long packetTimeoutMs = DEFAULT_PACKET_TIMEOUT_MS;
-	/** How long unchanged progress values on the last page are taken to mean "this model doesn't report progress". */
+	/**
+	 * How long unchanged progress values on the last page are taken to mean "this
+	 * model doesn't report progress".
+	 */
 	private static final long PROGRESS_SETTLE_MS = 3000;
 
 	private volatile boolean debug;
 
-	// --- firmware-upgrade-only state (see #firmwareUpgrade) - a separate raw-data pipeline from
-	// the one above, since the firmware exchange mixes two different packet frame layouts
-	// (NiimbotPacket and NiimbotCrc32Packet) that #onRawData/#dispatch don't know how to parse.
+	// --- firmware-upgrade-only state (see #firmwareUpgrade) - a separate raw-data
+	// pipeline from
+	// the one above, since the firmware exchange mixes two different packet frame
+	// layouts
+	// (NiimbotPacket and NiimbotCrc32Packet) that #onRawData/#dispatch don't know
+	// how to parse.
 	private byte[] firmwareBuf = new byte[0];
 	private BlockingQueue<Object> firmwareQueue;
 
@@ -65,17 +72,22 @@ public class NiimbotDevice {
 		this.packetTimeoutMs = packetTimeoutMs;
 	}
 
-	/** When enabled, prints every raw TX/RX byte sequence (and dropped unsolicited packets) to stderr - mirrors niimbluelib's own {@code setDebug}. */
+	/**
+	 * When enabled, prints every raw TX/RX byte sequence (and dropped unsolicited
+	 * packets) to stderr - mirrors niimbluelib's own {@code setDebug}.
+	 */
 	public void setDebug(boolean debug) {
 		this.debug = debug;
 	}
 
-	// --- connection lifecycle ---------------------------------------------------------------
+	// --- connection lifecycle
+	// ---------------------------------------------------------------
 
 	/**
-	 * Opens the transport, performs the connect handshake, and fetches printer info. Ported from
-	 * niimbluelib's {@code NiimbotBluetoothClient.connect()} + {@code negotiateAndGetPrinterInfo}.
-	 * On failure, the transport is disconnected before the exception propagates.
+	 * Opens the transport, performs the connect handshake, and fetches printer
+	 * info. Ported from niimbluelib's {@code NiimbotBluetoothClient.connect()} +
+	 * {@code negotiateAndGetPrinterInfo}. On failure, the transport is disconnected
+	 * before the exception propagates.
 	 */
 	public PrinterInfo connect() throws IOException, TimeoutException {
 		transport.setRawDataListener(this::onRawData);
@@ -121,15 +133,22 @@ public class NiimbotDevice {
 		return info;
 	}
 
-	/** Looks up this printer's capabilities in {@link PrinterModels}, once {@link #connect()} has populated the model ID. */
+	/**
+	 * Looks up this printer's capabilities in {@link PrinterModels}, once
+	 * {@link #connect()} has populated the model ID.
+	 */
 	public Optional<PrinterModelMeta> getModelMetadata() {
 		Integer modelId = info.getModelId();
 		return modelId == null ? Optional.empty() : PrinterModels.findById(modelId);
 	}
 
-	// --- connect negotiate / printer info ----------------------------------------------------
+	// --- connect negotiate / printer info
+	// ----------------------------------------------------
 
-	/** Sends the connect packet and, on protocol v3, fetches the protocol version/color support. */
+	/**
+	 * Sends the connect packet and, on protocol v3, fetches the protocol
+	 * version/color support.
+	 */
 	public ConnectNegotiateResult connectNegotiate() throws IOException, TimeoutException {
 		ConnectResult connectResult = sendConnect();
 		int protocolVersion = 0;
@@ -147,10 +166,12 @@ public class NiimbotDevice {
 	}
 
 	/**
-	 * Fetches printer info and stores it. The model ID is required (an exception propagates if it
-	 * can't be read); every other field is best-effort - a failure just leaves that field unset,
-	 * matching niimbluelib's own {@code fetchPrinterInfo} (which logs a console warning per field
-	 * instead; this port has no logging facade yet, so failures are silently swallowed here).
+	 * Fetches printer info and stores it. The model ID is required (an exception
+	 * propagates if it can't be read); every other field is best-effort - a failure
+	 * just leaves that field unset, matching niimbluelib's own
+	 * {@code fetchPrinterInfo} (which logs a console warning per field instead;
+	 * this port has no logging facade yet, so failures are silently swallowed
+	 * here).
 	 */
 	public PrinterInfo fetchPrinterInfo() throws IOException, TimeoutException {
 		info.setModelId(getPrinterModel());
@@ -196,7 +217,8 @@ public class NiimbotDevice {
 		return info;
 	}
 
-	// --- typed commands -----------------------------------------------------------------------
+	// --- typed commands
+	// -----------------------------------------------------------------------
 
 	public ConnectResult sendConnect() throws IOException, TimeoutException {
 		return PacketParser.parseConnectResponse(send(PacketGenerator.connect()));
@@ -207,10 +229,14 @@ public class NiimbotDevice {
 	}
 
 	public int getPrinterModel() throws IOException, TimeoutException {
-		return PacketParser.parsePrinterInfoModelIdResponse(send(PacketGenerator.getPrinterInfo(PrinterInfoType.PRINTER_MODEL_ID)));
+		return PacketParser.parsePrinterInfoModelIdResponse(
+				send(PacketGenerator.getPrinterInfo(PrinterInfoType.PRINTER_MODEL_ID)));
 	}
 
-	/** Read paper NFC tag info - see {@link RfidInfo}'s javadoc for how Niimbot's consumable lock shows up here. */
+	/**
+	 * Read paper NFC tag info - see {@link RfidInfo}'s javadoc for how Niimbot's
+	 * consumable lock shows up here.
+	 */
 	public RfidInfo rfidInfo() throws IOException, TimeoutException {
 		return PacketParser.parseRfidInfoResponse(send(PacketGenerator.rfidInfo()));
 	}
@@ -220,16 +246,23 @@ public class NiimbotDevice {
 		return PacketParser.parseRfidInfoResponse(send(PacketGenerator.rfidInfo2()));
 	}
 
-	/** Read the loaded paper's geometry (gap/total/tail height, width, in both pixels and mm). */
+	/**
+	 * Read the loaded paper's geometry (gap/total/tail height, width, in both
+	 * pixels and mm).
+	 */
 	public PaperInfo getPaperInfo() throws IOException, TimeoutException {
 		return PacketParser.parsePaperInfoResponse(send(PacketGenerator.getPaperInfo()));
 	}
 
 	public HeartbeatPrinterInfoData heartbeatPrinterInfo() throws IOException, TimeoutException {
-		return PacketParser.parseHeartbeatPrinterInfoResponse(send(PacketGenerator.heartbeat(HeartbeatType.PRINTER_INFO)));
+		return PacketParser
+				.parseHeartbeatPrinterInfoResponse(send(PacketGenerator.heartbeat(HeartbeatType.PRINTER_INFO)));
 	}
 
-	/** Sends a single heartbeat (no repeating timer - call this periodically yourself if desired). */
+	/**
+	 * Sends a single heartbeat (no repeating timer - call this periodically
+	 * yourself if desired).
+	 */
 	public HeartbeatData heartbeat() throws IOException, TimeoutException {
 		HeartbeatType type = info.getProtocolVersion() >= 3 ? HeartbeatType.ADVANCED_2 : HeartbeatType.ADVANCED_1;
 		NiimbotPacket packet = sendPacketWaitResponse(PacketGenerator.heartbeat(type), 500);
@@ -251,11 +284,13 @@ public class NiimbotDevice {
 	}
 
 	public int getBatteryChargeLevel() throws IOException, TimeoutException {
-		return PacketParser.parseBatteryChargeLevelResponse(send(PacketGenerator.getPrinterInfo(PrinterInfoType.BATTERY_CHARGE_LEVEL)));
+		return PacketParser.parseBatteryChargeLevelResponse(
+				send(PacketGenerator.getPrinterInfo(PrinterInfoType.BATTERY_CHARGE_LEVEL)));
 	}
 
 	public AutoShutdownTime getAutoShutDownTime() throws IOException, TimeoutException {
-		int code = PacketParser.parseAutoShutdownTimeResponse(send(PacketGenerator.getPrinterInfo(PrinterInfoType.AUTO_SHUTDOWN_TIME)));
+		int code = PacketParser.parseAutoShutdownTimeResponse(
+				send(PacketGenerator.getPrinterInfo(PrinterInfoType.AUTO_SHUTDOWN_TIME)));
 		return AutoShutdownTime.fromCode(code)
 				.orElseThrow(() -> new NiimbotProtocolException("Unknown auto shutdown time " + code));
 	}
@@ -265,11 +300,13 @@ public class NiimbotDevice {
 	}
 
 	public String getSoftwareVersion() throws IOException, TimeoutException {
-		return PacketParser.parsePrinterVersionResponse(send(PacketGenerator.getPrinterInfo(PrinterInfoType.SOFTWARE_VERSION)));
+		return PacketParser
+				.parsePrinterVersionResponse(send(PacketGenerator.getPrinterInfo(PrinterInfoType.SOFTWARE_VERSION)));
 	}
 
 	public String getHardwareVersion() throws IOException, TimeoutException {
-		return PacketParser.parsePrinterVersionResponse(send(PacketGenerator.getPrinterInfo(PrinterInfoType.HARDWARE_VERSION)));
+		return PacketParser
+				.parsePrinterVersionResponse(send(PacketGenerator.getPrinterInfo(PrinterInfoType.HARDWARE_VERSION)));
 	}
 
 	public LabelType getLabelType() throws IOException, TimeoutException {
@@ -277,14 +314,19 @@ public class NiimbotDevice {
 	}
 
 	public String getPrinterSerialNumber() throws IOException, TimeoutException {
-		return PacketParser.parsePrinterSerialNumberResponse(send(PacketGenerator.getPrinterInfo(PrinterInfoType.SERIAL_NUMBER)));
+		return PacketParser
+				.parsePrinterSerialNumberResponse(send(PacketGenerator.getPrinterInfo(PrinterInfoType.SERIAL_NUMBER)));
 	}
 
 	public String getPrinterBluetoothMacAddress() throws IOException, TimeoutException {
-		return PacketParser.parsePrinterBluetoothMacAddressResponse(send(PacketGenerator.getPrinterInfo(PrinterInfoType.BLUETOOTH_ADDRESS)));
+		return PacketParser.parsePrinterBluetoothMacAddressResponse(
+				send(PacketGenerator.getPrinterInfo(PrinterInfoType.BLUETOOTH_ADDRESS)));
 	}
 
-	/** Clears printer settings (sound and maybe some others - matches niimbluelib's own uncertainty about the full scope). */
+	/**
+	 * Clears printer settings (sound and maybe some others - matches niimbluelib's
+	 * own uncertainty about the full scope).
+	 */
 	public void printerReset() throws IOException, TimeoutException {
 		send(PacketGenerator.printerReset());
 	}
@@ -297,7 +339,10 @@ public class NiimbotDevice {
 		send(PacketGenerator.setSoundSettings(soundType, on));
 	}
 
-	/** niimbluelib's own comment: "When 1 or 2 sent to B1, it starts to throw out some paper (~15cm)" - uses real consumables. False returned when refused. */
+	/**
+	 * niimbluelib's own comment: "When 1 or 2 sent to B1, it starts to throw out
+	 * some paper (~15cm)" - uses real consumables. False returned when refused.
+	 */
 	public boolean labelPositioningCalibration(int value) throws IOException, TimeoutException {
 		return PacketParser.parseBooleanResponse(send(PacketGenerator.labelPositioningCalibration(value)));
 	}
@@ -318,7 +363,8 @@ public class NiimbotDevice {
 		return status;
 	}
 
-	// --- print flow primitives (used by D110V4PrintTask) --------------------------------------
+	// --- print flow primitives (used by D110V4PrintTask)
+	// --------------------------------------
 
 	/** False returned when pageStart is refused. */
 	public boolean pageStart() throws IOException, TimeoutException {
@@ -336,20 +382,27 @@ public class NiimbotDevice {
 	}
 
 	/**
-	 * Sends an arbitrary pre-built packet and waits for its response (unless one-way) - the
-	 * generic escape hatch print-task classes use for packets ({@code printStart9b},
-	 * {@code setPageSize13b}, bitmap rows, ...) that don't warrant their own typed method here.
+	 * Sends an arbitrary pre-built packet and waits for its response (unless
+	 * one-way) - the generic escape hatch print-task classes use for packets
+	 * ({@code printStart9b}, {@code setPageSize13b}, bitmap rows, ...) that don't
+	 * warrant their own typed method here.
 	 */
 	public NiimbotPacket sendRaw(NiimbotPacket packet) throws IOException, TimeoutException {
 		return send(packet);
 	}
 
-	/** Like {@link #sendRaw(NiimbotPacket)}, but with an explicit per-packet timeout instead of {@link #getPacketTimeout()}. */
+	/**
+	 * Like {@link #sendRaw(NiimbotPacket)}, but with an explicit per-packet timeout
+	 * instead of {@link #getPacketTimeout()}.
+	 */
 	public NiimbotPacket sendRaw(NiimbotPacket packet, long timeoutMs) throws IOException, TimeoutException {
 		return sendPacketWaitResponse(packet, timeoutMs);
 	}
 
-	/** Like {@link #sendRaw(NiimbotPacket)}, but for a whole sequence, sent one at a time in order. */
+	/**
+	 * Like {@link #sendRaw(NiimbotPacket)}, but for a whole sequence, sent one at a
+	 * time in order.
+	 */
 	public void sendAllRaw(List<NiimbotPacket> packets) throws IOException, TimeoutException {
 		for (NiimbotPacket p : packets) {
 			send(p);
@@ -364,19 +417,23 @@ public class NiimbotDevice {
 	}
 
 	/**
-	 * Polls {@link #getPrintStatus()} every {@code pollIntervalMs} until {@code page == pagesToPrint}
-	 * <em>and</em> that last page's print and feed progress both read 100. Ported from niimbluelib's
-	 * {@code waitUntilPrintFinishedByStatusPoll} - simplified to plain blocking (this is a synchronous
-	 * library), so unlike niimbluelib this has no {@code printprogress} event; the caller can inspect
-	 * {@link PrintStatus} itself each poll if it wants progress.
+	 * Polls {@link #getPrintStatus()} every {@code pollIntervalMs} until
+	 * {@code page == pagesToPrint} <em>and</em> that last page's print and feed
+	 * progress both read 100. Ported from niimbluelib's
+	 * {@code waitUntilPrintFinishedByStatusPoll} - simplified to plain blocking
+	 * (this is a synchronous library), so unlike niimbluelib this has no
+	 * {@code printprogress} event; the caller can inspect {@link PrintStatus}
+	 * itself each poll if it wants progress.
 	 *
 	 * <p>
-	 * <b>The progress condition is a deliberate deviation from niimbluelib</b>, which stops at
-	 * {@code page == pagesToPrint} alone. That's enough for an app that stays connected afterwards,
-	 * but a caller that disconnects as soon as this returns can cut the label short - seen on a real
-	 * M2_H printed through a remote bridge whose link dropped right after the job. In case a model
-	 * never reports progress at all, the wait also ends once the progress values have stopped changing
-	 * for {@value #PROGRESS_SETTLE_MS} ms, rather than running into the overall timeout.
+	 * <b>The progress condition is a deliberate deviation from niimbluelib</b>,
+	 * which stops at {@code page == pagesToPrint} alone. That's enough for an app
+	 * that stays connected afterwards, but a caller that disconnects as soon as
+	 * this returns can cut the label short - seen on a real M2_H printed through a
+	 * remote bridge whose link dropped right after the job. In case a model never
+	 * reports progress at all, the wait also ends once the progress values have
+	 * stopped changing for {@value #PROGRESS_SETTLE_MS} ms, rather than running
+	 * into the overall timeout.
 	 */
 	public void waitUntilPrintFinishedByStatusPoll(int pagesToPrint, long pollIntervalMs, long overallTimeoutMs)
 			throws IOException, TimeoutException {
@@ -392,7 +449,8 @@ public class NiimbotDevice {
 					return;
 				}
 				long now = System.currentTimeMillis();
-				if (status.getPagePrintProgress() != lastPrintProgress || status.getPageFeedProgress() != lastFeedProgress) {
+				if (status.getPagePrintProgress() != lastPrintProgress
+						|| status.getPageFeedProgress() != lastFeedProgress) {
 					lastPrintProgress = status.getPagePrintProgress();
 					lastFeedProgress = status.getPageFeedProgress();
 					lastProgressChange = now;
@@ -401,20 +459,22 @@ public class NiimbotDevice {
 				}
 			}
 			if (System.currentTimeMillis() > deadline) {
-				throw new TimeoutException("Timeout waiting for print to finish (last status: page="
-						+ status.getPage() + "/" + pagesToPrint + ")");
+				throw new TimeoutException("Timeout waiting for print to finish (last status: page=" + status.getPage()
+						+ "/" + pagesToPrint + ")");
 			}
 			sleep(pollIntervalMs);
 		}
 	}
 
 	/**
-	 * Like {@link #waitUntilPrintFinishedByStatusPoll}, but for tasks (e.g. {@code B21V1PrintTask})
-	 * whose printer reports completion only via {@link #printEnd()} returning {@code true} on a
-	 * retry, not via {@link #getPrintStatus()}. Ported from niimbluelib's
+	 * Like {@link #waitUntilPrintFinishedByStatusPoll}, but for tasks (e.g.
+	 * {@code B21V1PrintTask}) whose printer reports completion only via
+	 * {@link #printEnd()} returning {@code true} on a retry, not via
+	 * {@link #getPrintStatus()}. Ported from niimbluelib's
 	 * {@code waitUntilPrintFinishedByPrintEndPoll}.
 	 */
-	public void waitUntilPrintFinishedByPrintEndPoll(long pollIntervalMs, long overallTimeoutMs) throws IOException, TimeoutException {
+	public void waitUntilPrintFinishedByPrintEndPoll(long pollIntervalMs, long overallTimeoutMs)
+			throws IOException, TimeoutException {
 		long deadline = System.currentTimeMillis() + overallTimeoutMs;
 
 		while (true) {
@@ -429,12 +489,13 @@ public class NiimbotDevice {
 	}
 
 	/**
-	 * Blocks until an <i>unsolicited</i> {@code IN_PRINTER_PAGE_INDEX} packet reports
-	 * {@code pagesToPrint} - unlike every other {@code waitUntilPrintFinished*} method, the printer
-	 * pushes these on its own rather than responding to a request, so this listens passively
-	 * instead of sending anything. {@code timeoutMs} resets on every page-index packet received
-	 * (matches niimbluelib's own {@code waitUntilPrintFinishedByPageIndex}). Used by
-	 * {@code OldD11PrintTask}.
+	 * Blocks until an <i>unsolicited</i> {@code IN_PRINTER_PAGE_INDEX} packet
+	 * reports {@code pagesToPrint} - unlike every other
+	 * {@code waitUntilPrintFinished*} method, the printer pushes these on its own
+	 * rather than responding to a request, so this listens passively instead of
+	 * sending anything. {@code timeoutMs} resets on every page-index packet
+	 * received (matches niimbluelib's own
+	 * {@code waitUntilPrintFinishedByPageIndex}). Used by {@code OldD11PrintTask}.
 	 */
 	public void waitForPageIndex(int pagesToPrint, long timeoutMs) throws IOException, TimeoutException {
 		lock.lock();
@@ -474,32 +535,40 @@ public class NiimbotDevice {
 	}
 
 	/**
-	 * Uploads new firmware. Ported from niimbluelib's {@code NiimbotProtocol.firmwareUpgrade}.
+	 * Uploads new firmware. Ported from niimbluelib's
+	 * {@code NiimbotProtocol.firmwareUpgrade}.
 	 *
 	 * <p>
-	 * <b>HIGH RISK - use entirely at your own risk.</b> An interrupted transfer, a corrupt image,
-	 * or firmware for the wrong model can permanently brick the printer - unlike wasted labels or
-	 * ribbon, this is not a reversible mistake. This port has never been exercised against real
-	 * hardware (there is no validated firmware file available in this project to test with) - its
-	 * correctness rests entirely on matching niimbluelib's source, not on any real upload having
-	 * succeeded. {@link NiimbotCrc32Packet}'s framing is covered by a unit test (encode/decode/
-	 * checksum round-trip), which is the only part of this feature that has actually been verified.
+	 * <b>HIGH RISK - use entirely at your own risk.</b> An interrupted transfer, a
+	 * corrupt image, or firmware for the wrong model can permanently brick the
+	 * printer - unlike wasted labels or ribbon, this is not a reversible mistake.
+	 * This port has never been exercised against real hardware (there is no
+	 * validated firmware file available in this project to test with) - its
+	 * correctness rests entirely on matching niimbluelib's source, not on any real
+	 * upload having succeeded. {@link NiimbotCrc32Packet}'s framing is covered by a
+	 * unit test (encode/decode/ checksum round-trip), which is the only part of
+	 * this feature that has actually been verified.
 	 *
 	 * <p>
-	 * Sequence (all fixed by the protocol, not configurable): send {@code StartFirmwareUpgrade},
-	 * wait for the printer to push {@code IN_REQUEST_FIRMWARE_CRC}, send the whole image's CRC32,
-	 * then repeatedly wait for the printer to push {@code IN_REQUEST_FIRMWARE_CHUNK} (naming which
-	 * 200-byte chunk it wants next) until it has requested past the end of the data, send
-	 * {@code FirmwareNoMoreChunks}, wait for {@code IN_FIRMWARE_CHECK_RESULT} (CRC verified), send
-	 * {@code FirmwareCommit}, wait for {@code IN_FIRMWARE_RESULT} (flash written). Any unexpected
-	 * response, timeout, or a negative check/commit result aborts with an exception - the caller
-	 * must not assume the printer is left in a good state either way.
+	 * Sequence (all fixed by the protocol, not configurable): send
+	 * {@code StartFirmwareUpgrade}, wait for the printer to push
+	 * {@code IN_REQUEST_FIRMWARE_CRC}, send the whole image's CRC32, then
+	 * repeatedly wait for the printer to push {@code IN_REQUEST_FIRMWARE_CHUNK}
+	 * (naming which 200-byte chunk it wants next) until it has requested past the
+	 * end of the data, send {@code FirmwareNoMoreChunks}, wait for
+	 * {@code IN_FIRMWARE_CHECK_RESULT} (CRC verified), send {@code FirmwareCommit},
+	 * wait for {@code IN_FIRMWARE_RESULT} (flash written). Any unexpected response,
+	 * timeout, or a negative check/commit result aborts with an exception - the
+	 * caller must not assume the printer is left in a good state either way.
 	 *
-	 * @param firmwareData the whole firmware image, verbatim
-	 * @param version      {@code "x.x"} version string sent with the upgrade request
-	 * @param onChunkProgress called with each chunk index as it's sent, or {@code null} to ignore
+	 * @param firmwareData    the whole firmware image, verbatim
+	 * @param version         {@code "x.x"} version string sent with the upgrade
+	 *                        request
+	 * @param onChunkProgress called with each chunk index as it's sent, or
+	 *                        {@code null} to ignore
 	 */
-	public void firmwareUpgrade(byte[] firmwareData, String version, IntConsumer onChunkProgress) throws IOException, TimeoutException {
+	public void firmwareUpgrade(byte[] firmwareData, String version, IntConsumer onChunkProgress)
+			throws IOException, TimeoutException {
 		final int chunkSize = 200;
 
 		lock.lock();
@@ -520,9 +589,10 @@ public class NiimbotDevice {
 				while (true) {
 					Object response = pollFirmware(5000, "firmware chunk request");
 
-					if (response instanceof NiimbotPacket
-							&& ((NiimbotPacket) response).getCommand() == ResponseCommandId.IN_FIRMWARE_RESULT.getCode()) {
-						throw new NiimbotProtocolException("Unexpected firmware result received while awaiting a chunk request");
+					if (response instanceof NiimbotPacket && ((NiimbotPacket) response)
+							.getCommand() == ResponseCommandId.IN_FIRMWARE_RESULT.getCode()) {
+						throw new NiimbotProtocolException(
+								"Unexpected firmware result received while awaiting a chunk request");
 					}
 					if (!(response instanceof NiimbotCrc32Packet)) {
 						throw new NiimbotProtocolException("Expected a firmware chunk-request packet");
@@ -543,15 +613,18 @@ public class NiimbotDevice {
 				}
 
 				writeFirmware(PacketGenerator.firmwareNoMoreChunks().toBytes());
-				NiimbotPacket checkResult = (NiimbotPacket) waitFirmware(ResponseCommandId.IN_FIRMWARE_CHECK_RESULT, 5000);
+				NiimbotPacket checkResult = (NiimbotPacket) waitFirmware(ResponseCommandId.IN_FIRMWARE_CHECK_RESULT,
+						5000);
 				if (!PacketParser.parseBooleanResponse(checkResult)) {
-					throw new NiimbotProtocolException("Firmware check failed (CRC mismatch) - do not power-cycle the printer, its state is undefined");
+					throw new NiimbotProtocolException(
+							"Firmware check failed (CRC mismatch) - do not power-cycle the printer, its state is undefined");
 				}
 
 				writeFirmware(PacketGenerator.firmwareCommit().toBytes());
 				NiimbotPacket firmwareResult = (NiimbotPacket) waitFirmware(ResponseCommandId.IN_FIRMWARE_RESULT, 5000);
 				if (!PacketParser.parseBooleanResponse(firmwareResult)) {
-					throw new NiimbotProtocolException("Firmware upgrade failed - do not power-cycle the printer, its state is undefined");
+					throw new NiimbotProtocolException(
+							"Firmware upgrade failed - do not power-cycle the printer, its state is undefined");
 				}
 			} finally {
 				transport.setRawDataListener(this::onRawData);
@@ -568,13 +641,17 @@ public class NiimbotDevice {
 		transport.write(bytes);
 	}
 
-	/** Waits for a specific expected response command, discarding nothing else in between (firmware upload has exactly one thing in flight at a time). */
+	/**
+	 * Waits for a specific expected response command, discarding nothing else in
+	 * between (firmware upload has exactly one thing in flight at a time).
+	 */
 	private Object waitFirmware(ResponseCommandId expected, long timeoutMs) throws IOException, TimeoutException {
 		Object response = pollFirmware(timeoutMs, expected.toString());
 		int cmd = response instanceof NiimbotPacket ? ((NiimbotPacket) response).getCommand()
 				: ((NiimbotCrc32Packet) response).getCommand();
 		if (cmd != expected.getCode()) {
-			throw new NiimbotProtocolException("Expected " + expected + " but got command 0x" + Integer.toHexString(cmd));
+			throw new NiimbotProtocolException(
+					"Expected " + expected + " but got command 0x" + Integer.toHexString(cmd));
 		}
 		return response;
 	}
@@ -594,12 +671,14 @@ public class NiimbotDevice {
 	}
 
 	/**
-	 * Raw-data listener installed only for the duration of {@link #firmwareUpgrade}. Unlike
-	 * {@link #onRawData}, this buffer can contain either frame layout - the command byte (always at
-	 * offset 2, common to both {@link NiimbotPacket} and {@link NiimbotCrc32Packet}) decides which
-	 * one applies before the frame length (and so the data-length byte's offset) can be known:
-	 * {@code IN_REQUEST_FIRMWARE_CHUNK} is the only response niimbluelib itself parses as
-	 * CRC32-framed; everything else in this exchange is a normal frame.
+	 * Raw-data listener installed only for the duration of
+	 * {@link #firmwareUpgrade}. Unlike {@link #onRawData}, this buffer can contain
+	 * either frame layout - the command byte (always at offset 2, common to both
+	 * {@link NiimbotPacket} and {@link NiimbotCrc32Packet}) decides which one
+	 * applies before the frame length (and so the data-length byte's offset) can be
+	 * known: {@code IN_REQUEST_FIRMWARE_CHUNK} is the only response niimbluelib
+	 * itself parses as CRC32-framed; everything else in this exchange is a normal
+	 * frame.
 	 */
 	private void onFirmwareRawData(byte[] data) {
 		if (data.length == 0) {
@@ -627,8 +706,7 @@ public class NiimbotDevice {
 			}
 
 			int dataLen = firmwareBuf[dataLenOffset] & 0xff;
-			int frameLen = crc32Framed
-					? NiimbotPacket.HEAD.length + 1 + 2 + 1 + dataLen + 4 + NiimbotPacket.TAIL.length
+			int frameLen = crc32Framed ? NiimbotPacket.HEAD.length + 1 + 2 + 1 + dataLen + 4 + NiimbotPacket.TAIL.length
 					: NiimbotPacket.HEAD.length + 1 + 1 + dataLen + 1 + NiimbotPacket.TAIL.length;
 			if (firmwareBuf.length < frameLen) {
 				return;
@@ -637,7 +715,8 @@ public class NiimbotDevice {
 			byte[] frameBytes = Arrays.copyOfRange(firmwareBuf, 0, frameLen);
 			firmwareBuf = Arrays.copyOfRange(firmwareBuf, frameLen, firmwareBuf.length);
 
-			Object parsed = crc32Framed ? NiimbotCrc32Packet.fromBytes(frameBytes) : NiimbotPacket.fromBytes(frameBytes);
+			Object parsed = crc32Framed ? NiimbotCrc32Packet.fromBytes(frameBytes)
+					: NiimbotPacket.fromBytes(frameBytes);
 			firmwareQueue.offer(parsed);
 		}
 	}
@@ -651,20 +730,23 @@ public class NiimbotDevice {
 		}
 	}
 
-	// --- packet send/receive plumbing ---------------------------------------------------------
+	// --- packet send/receive plumbing
+	// ---------------------------------------------------------
 
 	private NiimbotPacket send(NiimbotPacket packet) throws IOException, TimeoutException {
 		return sendPacketWaitResponse(packet, packetTimeoutMs);
 	}
 
 	/**
-	 * Sends a packet and, unless it's one-way, blocks for up to {@code timeoutMs} for a response
-	 * matching its {@link NiimbotPacket#getValidResponseIds()}. Ported from niimbluelib's
-	 * {@code sendPacketWaitResponse}/{@code waitForPacket}, simplified to plain blocking (this is a
-	 * synchronous library, not an event-emitter-based one) and serialized with a lock instead of an
-	 * async mutex.
+	 * Sends a packet and, unless it's one-way, blocks for up to {@code timeoutMs}
+	 * for a response matching its {@link NiimbotPacket#getValidResponseIds()}.
+	 * Ported from niimbluelib's
+	 * {@code sendPacketWaitResponse}/{@code waitForPacket}, simplified to plain
+	 * blocking (this is a synchronous library, not an event-emitter-based one) and
+	 * serialized with a lock instead of an async mutex.
 	 */
-	private NiimbotPacket sendPacketWaitResponse(NiimbotPacket packet, long timeoutMs) throws IOException, TimeoutException {
+	private NiimbotPacket sendPacketWaitResponse(NiimbotPacket packet, long timeoutMs)
+			throws IOException, TimeoutException {
 		lock.lock();
 		try {
 			resultQueue.clear();
@@ -711,9 +793,10 @@ public class NiimbotDevice {
 	}
 
 	/**
-	 * Feeds raw bytes from the transport, reassembling and dispatching complete packets. Ported
-	 * from niimbluelib's {@code processRawPacket} - an incomplete trailing frame is buffered and
-	 * completed by a later call, rather than treated as an error.
+	 * Feeds raw bytes from the transport, reassembling and dispatching complete
+	 * packets. Ported from niimbluelib's {@code processRawPacket} - an incomplete
+	 * trailing frame is buffered and completed by a later call, rather than treated
+	 * as an error.
 	 */
 	private void onRawData(byte[] data) {
 		if (data.length == 0) {
@@ -763,7 +846,8 @@ public class NiimbotDevice {
 		if (matches) {
 			resultQueue.offer(p);
 		} else if (debug) {
-			System.err.println("RX dropped (unsolicited, awaiting " + ids + "): cmd=0x" + Integer.toHexString(p.getCommand()));
+			System.err.println(
+					"RX dropped (unsolicited, awaiting " + ids + "): cmd=0x" + Integer.toHexString(p.getCommand()));
 		}
 	}
 

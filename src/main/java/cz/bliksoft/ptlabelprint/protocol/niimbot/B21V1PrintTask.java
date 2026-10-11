@@ -7,14 +7,17 @@ import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Print flow for the {@code B21_V1} print task - ported from niimbluelib's {@code B21V1PrintTask}
- * (src/print_tasks/B21V1PrintTask.ts). Per {@link NiimbotPrintTasks}' dispatch table, this is the
- * print task the B21 uses. Unlike every other task in this package, {@code quantity} copies aren't
- * requested via a single page-size field - each copy is sent as its own complete page in a loop
- * (niimbluelib's own comment leaves {@code PacketGenerator.printClear()} commented out here, so
- * this port omits it too, unlike {@link OldD11PrintTask}/{@link D110PrintTask}). Completion is
- * tracked via {@link NiimbotDevice#waitUntilPrintFinishedByPrintEndPoll} - repeatedly retrying
- * {@link NiimbotDevice#printEnd()} until it succeeds, not a {@code PrintStatus} poll.
+ * Print flow for the {@code B21_V1} print task - ported from niimbluelib's
+ * {@code B21V1PrintTask} (src/print_tasks/B21V1PrintTask.ts). Per
+ * {@link NiimbotPrintTasks}' dispatch table, this is the print task the B21
+ * uses. Unlike every other task in this package, {@code quantity} copies aren't
+ * requested via a single page-size field - each copy is sent as its own
+ * complete page in a loop (niimbluelib's own comment leaves
+ * {@code PacketGenerator.printClear()} commented out here, so this port omits
+ * it too, unlike {@link OldD11PrintTask}/{@link D110PrintTask}). Completion is
+ * tracked via {@link NiimbotDevice#waitUntilPrintFinishedByPrintEndPoll} -
+ * repeatedly retrying {@link NiimbotDevice#printEnd()} until it succeeds, not a
+ * {@code PrintStatus} poll.
  */
 public class B21V1PrintTask extends AbstractNiimbotPrintTask {
 

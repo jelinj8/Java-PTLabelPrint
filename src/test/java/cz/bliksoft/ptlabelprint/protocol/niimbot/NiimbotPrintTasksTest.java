@@ -29,7 +29,8 @@ class NiimbotPrintTasksTest {
 
 	@Test
 	void versionedOverrideBeatsBareModelMatch() {
-		// D110_M is bare-mapped to B1PrintTask, but protocol v4 specifically overrides to D110V4PrintTask.
+		// D110_M is bare-mapped to B1PrintTask, but protocol v4 specifically overrides
+		// to D110V4PrintTask.
 		Optional<TaskFactory> v4 = NiimbotPrintTasks.findPrintTask(PrinterModel.D110_M, 4);
 		assertTrue(v4.get().create(null, new PrintOptions()) instanceof D110V4PrintTask);
 
@@ -39,7 +40,8 @@ class NiimbotPrintTasksTest {
 
 	@Test
 	void modelWithNoPortedTaskResolvesEmpty() {
-		// A63 isn't in niimbluelib's own modelPrintTasks dispatch table either - no task to invent.
+		// A63 isn't in niimbluelib's own modelPrintTasks dispatch table either - no
+		// task to invent.
 		assertFalse(NiimbotPrintTasks.findPrintTask(PrinterModel.A63, 1).isPresent());
 	}
 }

@@ -25,17 +25,19 @@ import cz.bliksoft.ptlabelprint.protocol.niimbot.PrinterModelMeta;
 
 /**
  * {@link LabelPrinter} for {@link PrinterFamily#NIIMBOT}. Thin wrapper around
- * {@link NiimbotDevice} - {@link #getDevice()} is the real, full-capability API (print flow,
- * heartbeat, RFID, etc.); this class adds the family/definition bookkeeping the abstraction layer
- * needs, plus the common {@link #print}/{@link #getCapabilities()} entry points.
+ * {@link NiimbotDevice} - {@link #getDevice()} is the real, full-capability API
+ * (print flow, heartbeat, RFID, etc.); this class adds the family/definition
+ * bookkeeping the abstraction layer needs, plus the common
+ * {@link #print}/{@link #getCapabilities()} entry points.
  *
  * <p>
  * Extends {@link AbstractLabelPrinter} directly, not through an intermediate
- * {@code NiimbotLabelPrinter}-family class the way {@link PhomemoDSeriesLabelPrinter} extends
- * {@link PhomemoLabelPrinter}: there is exactly one concrete Niimbot {@link LabelPrinter} subclass
- * and no foreseeable sibling today. If/when a second one is ever needed, extract an intermediate
- * class following {@link PhomemoLabelPrinter}'s exact pattern rather than duplicating its
- * connect/close/isConnected bodies here first.
+ * {@code NiimbotLabelPrinter}-family class the way
+ * {@link PhomemoDSeriesLabelPrinter} extends {@link PhomemoLabelPrinter}: there
+ * is exactly one concrete Niimbot {@link LabelPrinter} subclass and no
+ * foreseeable sibling today. If/when a second one is ever needed, extract an
+ * intermediate class following {@link PhomemoLabelPrinter}'s exact pattern
+ * rather than duplicating its connect/close/isConnected bodies here first.
  */
 public class NiimbotLabelPrinter extends AbstractLabelPrinter {
 
@@ -46,7 +48,10 @@ public class NiimbotLabelPrinter extends AbstractLabelPrinter {
 		this.device = new NiimbotDevice(transport);
 	}
 
-	/** The full Niimbot device API - connect handshake result, printer info, print flow, etc. */
+	/**
+	 * The full Niimbot device API - connect handshake result, printer info, print
+	 * flow, etc.
+	 */
 	public NiimbotDevice getDevice() {
 		return device;
 	}
@@ -56,7 +61,10 @@ public class NiimbotLabelPrinter extends AbstractLabelPrinter {
 		device.connect();
 	}
 
-	/** Convenience for {@code getDevice().getPrinterInfo()}, valid after {@link #connect()}. */
+	/**
+	 * Convenience for {@code getDevice().getPrinterInfo()}, valid after
+	 * {@link #connect()}.
+	 */
 	public PrinterInfo getPrinterInfo() {
 		return device.getPrinterInfo();
 	}
@@ -74,18 +82,21 @@ public class NiimbotLabelPrinter extends AbstractLabelPrinter {
 	@Override
 	public PrinterCapabilities getCapabilities() {
 		PrinterModelMeta meta = requireModelMeta();
-		return new PrinterCapabilities(meta.getDpi(), meta.getPrintheadPixels(), meta.getDensityMin(), meta.getDensityMax());
+		return new PrinterCapabilities(meta.getDpi(), meta.getPrintheadPixels(), meta.getDensityMin(),
+				meta.getDensityMax());
 	}
 
 	/**
-	 * See {@link LabelPrinter}'s own javadoc for the full rotation/density/copies algorithm. This is
-	 * a direct generalization of what {@code Cli.NiimbotPrintTestCommand} already does - model/task
-	 * lookup, {@link PrintOptions} construction, encode, print - plus the mandatory
-	 * {@link PrintDirection} rotation that command never applied. {@link PrintJob#getLeadOffsetMm()}
-	 * moves the image along the feed direction, applied after every rotation - the same thing
-	 * Niimbot's own app (and niimblue) do for their print offset, which they keep app-side too: no
-	 * printer command for it exists in niimbluelib. {@link PrintJob#getMediaSideGapMm()} isn't
-	 * honoured here.
+	 * See {@link LabelPrinter}'s own javadoc for the full rotation/density/copies
+	 * algorithm. This is a direct generalization of what
+	 * {@code Cli.NiimbotPrintTestCommand} already does - model/task lookup,
+	 * {@link PrintOptions} construction, encode, print - plus the mandatory
+	 * {@link PrintDirection} rotation that command never applied.
+	 * {@link PrintJob#getLeadOffsetMm()} moves the image along the feed direction,
+	 * applied after every rotation - the same thing Niimbot's own app (and
+	 * niimblue) do for their print offset, which they keep app-side too: no printer
+	 * command for it exists in niimbluelib. {@link PrintJob#getMediaSideGapMm()}
+	 * isn't honoured here.
 	 */
 	@Override
 	public void print(BufferedImage image, PrintJob job) throws IOException, TimeoutException {
@@ -99,11 +110,13 @@ public class NiimbotLabelPrinter extends AbstractLabelPrinter {
 
 		boolean mandatoryRotate90 = meta.getPrintDirection() == PrintDirection.LEFT;
 		PixelSource source = new BufferedImagePixelSource(image);
-		PixelSource rotated = RotationResolver.resolve(source, mandatoryRotate90, meta.getPrintheadPixels(), job.getRotation());
+		PixelSource rotated = RotationResolver.resolve(source, mandatoryRotate90, meta.getPrintheadPixels(),
+				job.getRotation());
 		if (mandatoryRotate90) {
 			rotated = ImageRotation.rotate90Clockwise(rotated);
 		}
-		// Rows are the feed direction from here on, whatever the model's print direction.
+		// Rows are the feed direction from here on, whatever the model's print
+		// direction.
 		int leadPixels = (int) Math.round(job.getLeadOffsetMm() * meta.getDpi() / 25.4);
 		if (Math.abs(leadPixels) >= rotated.getHeight()) {
 			throw new IllegalArgumentException("Lead offset " + job.getLeadOffsetMm() + " mm is longer than the image");
@@ -125,14 +138,12 @@ public class NiimbotLabelPrinter extends AbstractLabelPrinter {
 					+ meta.getDensityMax() + "] for " + meta.getModel());
 		}
 
-		return new PrintOptions()
-				.setLabelType(job.isContinuousMedia() ? LabelType.CONTINUOUS : LabelType.WITH_GAPS)
-				.setDensity(density)
-				.setTotalPages(job.getCopies());
+		return new PrintOptions().setLabelType(job.isContinuousMedia() ? LabelType.CONTINUOUS : LabelType.WITH_GAPS)
+				.setDensity(density).setTotalPages(job.getCopies());
 	}
 
 	private PrinterModelMeta requireModelMeta() {
-		return device.getModelMetadata()
-				.orElseThrow(() -> new IllegalStateException("Not connected, or connected model isn't recognized - call connect() first"));
+		return device.getModelMetadata().orElseThrow(() -> new IllegalStateException(
+				"Not connected, or connected model isn't recognized - call connect() first"));
 	}
 }

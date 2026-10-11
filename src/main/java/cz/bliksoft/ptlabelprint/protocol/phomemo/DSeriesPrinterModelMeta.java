@@ -1,6 +1,9 @@
 package cz.bliksoft.ptlabelprint.protocol.phomemo;
 
-/** Per-model capabilities for a {@code d-series} model. See {@link DSeriesPrinterModels}. */
+/**
+ * Per-model capabilities for a {@code d-series} model. See
+ * {@link DSeriesPrinterModels}.
+ */
 public class DSeriesPrinterModelMeta {
 
 	private final DSeriesPrinterModel model;
@@ -9,7 +12,8 @@ public class DSeriesPrinterModelMeta {
 	private final int densityMin;
 	private final int densityMax;
 
-	public DSeriesPrinterModelMeta(DSeriesPrinterModel model, int dpi, int printheadPixels, int densityMin, int densityMax) {
+	public DSeriesPrinterModelMeta(DSeriesPrinterModel model, int dpi, int printheadPixels, int densityMin,
+			int densityMax) {
 		this.model = model;
 		this.dpi = dpi;
 		this.printheadPixels = printheadPixels;

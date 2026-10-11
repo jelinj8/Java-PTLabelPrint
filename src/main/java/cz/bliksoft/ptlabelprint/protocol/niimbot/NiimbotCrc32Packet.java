@@ -4,18 +4,22 @@ import java.util.Arrays;
 import java.util.zip.CRC32;
 
 /**
- * The firmware-upgrade wire frame: {@code [0x55, 0x55, CMD, CHUNK_HI, CHUNK_LO, DATA_LEN, DATA...,
- * CRC32_CHECKSUM (4 bytes), 0xAA, 0xAA]} - a genuinely different layout from {@link NiimbotPacket}'s
- * normal frame (a 2-byte chunk-number field, and a 4-byte CRC32 checksum instead of a 1-byte XOR
- * one). Ported from niimbluelib's {@code NiimbotCrc32Packet} (src/packets/packet.ts), used only by
+ * The firmware-upgrade wire frame:
+ * {@code [0x55, 0x55, CMD, CHUNK_HI, CHUNK_LO, DATA_LEN, DATA...,
+ * CRC32_CHECKSUM (4 bytes), 0xAA, 0xAA]} - a genuinely different layout from
+ * {@link NiimbotPacket}'s normal frame (a 2-byte chunk-number field, and a
+ * 4-byte CRC32 checksum instead of a 1-byte XOR one). Ported from niimbluelib's
+ * {@code NiimbotCrc32Packet} (src/packets/packet.ts), used only by
  * {@link NiimbotDevice#firmwareUpgrade}.
  *
  * <p>
- * Deliberately <b>not</b> a subclass of {@link NiimbotPacket}: that class's fields/methods aren't
- * designed for subclassing (private fields, no protected hooks), and niimbluelib itself, despite
- * using {@code extends}, overrides every field-touching method anyway - the two frame layouts share
- * only the head/tail bytes, nothing else. A standalone class avoids putting any subclassing burden
- * on already hardware-confirmed, heavily-used code for the sake of this one feature.
+ * Deliberately <b>not</b> a subclass of {@link NiimbotPacket}: that class's
+ * fields/methods aren't designed for subclassing (private fields, no protected
+ * hooks), and niimbluelib itself, despite using {@code extends}, overrides
+ * every field-touching method anyway - the two frame layouts share only the
+ * head/tail bytes, nothing else. A standalone class avoids putting any
+ * subclassing burden on already hardware-confirmed, heavily-used code for the
+ * sake of this one feature.
  */
 public class NiimbotCrc32Packet {
 
@@ -45,7 +49,11 @@ public class NiimbotCrc32Packet {
 		return NiimbotPacket.HEAD.length + 1 + 2 + 1 + data.length + 4 + NiimbotPacket.TAIL.length;
 	}
 
-	/** CRC32 over {@code [command, chunkNumberHi, chunkNumberLo, dataLength, ...data]} - matches niimbluelib's own {@code checksum} getter exactly. */
+	/**
+	 * CRC32 over
+	 * {@code [command, chunkNumberHi, chunkNumberLo, dataLength, ...data]} -
+	 * matches niimbluelib's own {@code checksum} getter exactly.
+	 */
 	public long checksum() {
 		byte[] chunkB = u16(chunkNumber);
 		byte[] buf = new byte[4 + data.length];
@@ -60,7 +68,9 @@ public class NiimbotCrc32Packet {
 		return crc.getValue();
 	}
 
-	/** {@code [0x55, 0x55, CMD, CHUNK_HI, CHUNK_LO, DATA_LEN, DATA..., CRC32(4 bytes), 0xAA, 0xAA]}. */
+	/**
+	 * {@code [0x55, 0x55, CMD, CHUNK_HI, CHUNK_LO, DATA_LEN, DATA..., CRC32(4 bytes), 0xAA, 0xAA]}.
+	 */
 	public byte[] toBytes() {
 		byte[] out = new byte[getLength()];
 		int pos = 0;
@@ -108,7 +118,8 @@ public class NiimbotCrc32Packet {
 		int dataLen = buf[5] & 0xff;
 
 		if (buf.length != minPacketSize + dataLen) {
-			throw new NiimbotProtocolException("Invalid packet size (" + buf.length + " != " + (minPacketSize + dataLen) + ")");
+			throw new NiimbotProtocolException(
+					"Invalid packet size (" + buf.length + " != " + (minPacketSize + dataLen) + ")");
 		}
 
 		byte[] data = Arrays.copyOfRange(buf, 6, 6 + dataLen);
@@ -118,13 +129,14 @@ public class NiimbotCrc32Packet {
 		NiimbotCrc32Packet packet = new NiimbotCrc32Packet(cmd, chunkNumber, data);
 
 		if (packet.checksum() != checksum) {
-			throw new NiimbotProtocolException("Invalid packet checksum (" + packet.checksum() + " != " + checksum + ")");
+			throw new NiimbotProtocolException(
+					"Invalid packet checksum (" + packet.checksum() + " != " + checksum + ")");
 		}
 
 		return packet;
 	}
 
 	private static byte[] u16(int n) {
-		return new byte[] {(byte) ((n >> 8) & 0xff), (byte) (n & 0xff)};
+		return new byte[] { (byte) ((n >> 8) & 0xff), (byte) (n & 0xff) };
 	}
 }

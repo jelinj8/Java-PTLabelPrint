@@ -1,8 +1,8 @@
 package cz.bliksoft.ptlabelprint.image;
 
 /**
- * Lazy whole-image shifts in the printer's own frame (rows = feed direction), for the media
- * position settings of {@code PrintJob}.
+ * Lazy whole-image shifts in the printer's own frame (rows = feed direction),
+ * for the media position settings of {@code PrintJob}.
  */
 public final class ImageShift {
 
@@ -10,8 +10,9 @@ public final class ImageShift {
 	}
 
 	/**
-	 * {@code source} moved {@code pixels} columns to the right by adding blank columns on the left - or,
-	 * if negative, to the left by dropping that many columns from its left edge.
+	 * {@code source} moved {@code pixels} columns to the right by adding blank
+	 * columns on the left - or, if negative, to the left by dropping that many
+	 * columns from its left edge.
 	 */
 	public static PixelSource shiftRight(PixelSource source, int pixels) {
 		if (pixels == 0) {
@@ -41,9 +42,10 @@ public final class ImageShift {
 	}
 
 	/**
-	 * {@code source} moved {@code pixels} rows later in the feed direction (earlier if negative). With
-	 * {@code keepLength} the result is as long as {@code source} - rows pushed past either end are
-	 * lost and the vacated end is blank; without it the length changes by {@code pixels} instead.
+	 * {@code source} moved {@code pixels} rows later in the feed direction (earlier
+	 * if negative). With {@code keepLength} the result is as long as {@code source}
+	 * - rows pushed past either end are lost and the vacated end is blank; without
+	 * it the length changes by {@code pixels} instead.
 	 */
 	public static PixelSource shiftDown(PixelSource source, int pixels, boolean keepLength) {
 		if (pixels == 0) {

@@ -1,8 +1,8 @@
 package cz.bliksoft.ptlabelprint.image;
 
 /**
- * A connected printer's physical/protocol characteristics, exposed uniformly across families via
- * {@code printer.LabelPrinter#getCapabilities()}.
+ * A connected printer's physical/protocol characteristics, exposed uniformly
+ * across families via {@code printer.LabelPrinter#getCapabilities()}.
  */
 public class PrinterCapabilities {
 
@@ -22,7 +22,10 @@ public class PrinterCapabilities {
 		return dpi;
 	}
 
-	/** The printhead's fixed physical dot-width - the axis a print's content must fit after rotation/canvas-resize. */
+	/**
+	 * The printhead's fixed physical dot-width - the axis a print's content must
+	 * fit after rotation/canvas-resize.
+	 */
 	public int getPrintheadPixels() {
 		return printheadPixels;
 	}

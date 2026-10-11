@@ -1,6 +1,12 @@
 package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
-/** Print options shared by every {@link AbstractNiimbotPrintTask} subclass. Ported from niimbluelib's {@code PrintOptions} - {@link #getTubeType()}/{@link #getTubeWidthMm()}/{@link #getHalfCut()} are only consumed by {@link D110V4PrintTask}, matching niimbluelib's own {@code D110MV4PrintTask}-only usage. */
+/**
+ * Print options shared by every {@link AbstractNiimbotPrintTask} subclass.
+ * Ported from niimbluelib's {@code PrintOptions} -
+ * {@link #getTubeType()}/{@link #getTubeWidthMm()}/{@link #getHalfCut()} are
+ * only consumed by {@link D110V4PrintTask}, matching niimbluelib's own
+ * {@code D110MV4PrintTask}-only usage.
+ */
 public class PrintOptions {
 
 	private LabelType labelType = LabelType.WITH_GAPS;
@@ -77,7 +83,11 @@ public class PrintOptions {
 		return cutHeight;
 	}
 
-	/** Shrink-tube type, or {@code null} if not printing on shrink tube. Only used by {@link D110V4PrintTask} - requires {@link #getLabelType()} to be {@link LabelType#CONTINUOUS}. */
+	/**
+	 * Shrink-tube type, or {@code null} if not printing on shrink tube. Only used
+	 * by {@link D110V4PrintTask} - requires {@link #getLabelType()} to be
+	 * {@link LabelType#CONTINUOUS}.
+	 */
 	public Integer getTubeType() {
 		return tubeType;
 	}
@@ -97,7 +107,10 @@ public class PrintOptions {
 		return this;
 	}
 
-	/** Whether to half-cut each label, or {@code null} to leave the printer's own default. Only used by {@link D110V4PrintTask}. */
+	/**
+	 * Whether to half-cut each label, or {@code null} to leave the printer's own
+	 * default. Only used by {@link D110V4PrintTask}.
+	 */
 	public Boolean getHalfCut() {
 		return halfCut;
 	}

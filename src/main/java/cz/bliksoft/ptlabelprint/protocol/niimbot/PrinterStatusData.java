@@ -1,6 +1,9 @@
 package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
-/** Response to {@link RequestCommandId#PRINTER_STATUS_DATA}, used during connect negotiation on protocol v3+. */
+/**
+ * Response to {@link RequestCommandId#PRINTER_STATUS_DATA}, used during connect
+ * negotiation on protocol v3+.
+ */
 public class PrinterStatusData {
 
 	private int protocolVersion;

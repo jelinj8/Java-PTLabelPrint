@@ -5,23 +5,31 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * A single Niimbot wire frame: {@code [0x55, 0x55, CMD, DATA_LEN, DATA..., XOR_CHECKSUM, 0xAA, 0xAA]}.
- * Ported from niimbluelib's {@code NiimbotPacket} (src/packets/packet.ts). The CRC32-checksummed
- * firmware-upgrade variant is {@link NiimbotCrc32Packet} - a standalone class, not a subclass of
- * this one, since this class's fields/methods aren't designed for subclassing (see that class's own
- * javadoc for why). See {@link NiimbotDevice#firmwareUpgrade} for the very real risks of actually
- * using it.
+ * A single Niimbot wire frame:
+ * {@code [0x55, 0x55, CMD, DATA_LEN, DATA..., XOR_CHECKSUM, 0xAA, 0xAA]}.
+ * Ported from niimbluelib's {@code NiimbotPacket} (src/packets/packet.ts). The
+ * CRC32-checksummed firmware-upgrade variant is {@link NiimbotCrc32Packet} - a
+ * standalone class, not a subclass of this one, since this class's
+ * fields/methods aren't designed for subclassing (see that class's own javadoc
+ * for why). See {@link NiimbotDevice#firmwareUpgrade} for the very real risks
+ * of actually using it.
  */
 public class NiimbotPacket {
 
-	public static final byte[] HEAD = {0x55, 0x55};
-	public static final byte[] TAIL = {(byte) 0xaa, (byte) 0xaa};
+	public static final byte[] HEAD = { 0x55, 0x55 };
+	public static final byte[] TAIL = { (byte) 0xaa, (byte) 0xaa };
 
-	/** Raw wire command byte (0-255) - either a {@link RequestCommandId#getCode()} or a {@link ResponseCommandId#getCode()}. */
+	/**
+	 * Raw wire command byte (0-255) - either a {@link RequestCommandId#getCode()}
+	 * or a {@link ResponseCommandId#getCode()}.
+	 */
 	private final int command;
 	private final byte[] data;
 
-	/** Response command IDs this packet's send should wait for; empty for a one-way packet. */
+	/**
+	 * Response command IDs this packet's send should wait for; empty for a one-way
+	 * packet.
+	 */
 	private List<ResponseCommandId> validResponseIds = Collections.emptyList();
 
 	/** There can be no response after this request. */
@@ -124,7 +132,8 @@ public class NiimbotPacket {
 		int dataLen = buf[3] & 0xff;
 
 		if (buf.length != minPacketSize + dataLen) {
-			throw new NiimbotProtocolException("Invalid packet size (" + buf.length + " != " + (minPacketSize + dataLen) + ")");
+			throw new NiimbotProtocolException(
+					"Invalid packet size (" + buf.length + " != " + (minPacketSize + dataLen) + ")");
 		}
 
 		byte[] data = Arrays.copyOfRange(buf, 4, 4 + dataLen);
@@ -133,7 +142,8 @@ public class NiimbotPacket {
 		NiimbotPacket packet = new NiimbotPacket(cmd, data);
 
 		if (packet.checksum() != checksum) {
-			throw new NiimbotProtocolException("Invalid packet checksum (" + packet.checksum() + " != " + checksum + ")");
+			throw new NiimbotProtocolException(
+					"Invalid packet checksum (" + packet.checksum() + " != " + checksum + ")");
 		}
 
 		return packet;

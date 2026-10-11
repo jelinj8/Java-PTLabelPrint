@@ -26,7 +26,8 @@ class PhomemoPrinterModelsTest {
 
 	@Test
 	void findsManualSelectOnlyModelsToo() {
-		// M110S has no PrinterCatalog name-detection entry, but is still cataloged here.
+		// M110S has no PrinterCatalog name-detection entry, but is still cataloged
+		// here.
 		Optional<PhomemoPrinterModelMeta> meta = PhomemoPrinterModels.findByModel(PhomemoPrinterModel.M110S);
 		assertTrue(meta.isPresent());
 		assertEquals("m110", meta.get().getProtocolTag());

@@ -1,6 +1,9 @@
 package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
-/** Accumulated printer information, populated by {@link NiimbotDevice#connect()}/{@code fetchPrinterInfo()}. */
+/**
+ * Accumulated printer information, populated by
+ * {@link NiimbotDevice#connect()}/{@code fetchPrinterInfo()}.
+ */
 public class PrinterInfo {
 
 	private ConnectResult connectResult;
@@ -123,11 +126,10 @@ public class PrinterInfo {
 
 	@Override
 	public String toString() {
-		return "PrinterInfo{" + "connectResult=" + connectResult + ", protocolVersion=" + protocolVersion
-				+ ", modelId=" + modelId + ", serial=" + serial + ", mac=" + mac + ", batteryPercents="
-				+ batteryPercents + ", autoShutdownTime=" + autoShutdownTime + ", labelType=" + labelType
-				+ ", printheadWidth=" + printheadWidth + ", supportColor=" + supportColor + ", softwareVersion="
-				+ softwareVersion + ", hardwareVersion=" + hardwareVersion + ", resolutionClass=" + resolutionClass
-				+ '}';
+		return "PrinterInfo{" + "connectResult=" + connectResult + ", protocolVersion=" + protocolVersion + ", modelId="
+				+ modelId + ", serial=" + serial + ", mac=" + mac + ", batteryPercents=" + batteryPercents
+				+ ", autoShutdownTime=" + autoShutdownTime + ", labelType=" + labelType + ", printheadWidth="
+				+ printheadWidth + ", supportColor=" + supportColor + ", softwareVersion=" + softwareVersion
+				+ ", hardwareVersion=" + hardwareVersion + ", resolutionClass=" + resolutionClass + '}';
 	}
 }

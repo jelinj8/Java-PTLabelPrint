@@ -1,8 +1,10 @@
 package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
 /**
- * Thrown when the printer answers a request with {@link ResponseCommandId#IN_PRINT_ERROR} or
- * {@link ResponseCommandId#NOT_SUPPORTED}. Ported from niimbluelib's {@code PrintError}.
+ * Thrown when the printer answers a request with
+ * {@link ResponseCommandId#IN_PRINT_ERROR} or
+ * {@link ResponseCommandId#NOT_SUPPORTED}. Ported from niimbluelib's
+ * {@code PrintError}.
  */
 public class NiimbotPrintException extends RuntimeException {
 
@@ -15,7 +17,10 @@ public class NiimbotPrintException extends RuntimeException {
 		this.reasonId = reasonId;
 	}
 
-	/** Raw {@link PrinterErrorCode} value, or 0 for a plain "not supported" response. */
+	/**
+	 * Raw {@link PrinterErrorCode} value, or 0 for a plain "not supported"
+	 * response.
+	 */
 	public int getReasonId() {
 		return reasonId;
 	}

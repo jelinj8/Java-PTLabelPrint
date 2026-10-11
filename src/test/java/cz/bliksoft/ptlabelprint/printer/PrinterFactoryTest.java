@@ -12,8 +12,8 @@ import org.junit.jupiter.params.provider.EnumSource;
 class PrinterFactoryTest {
 
 	@ParameterizedTest
-	@EnumSource(value = PrinterFamily.class,
-			names = {"PHOMEMO_M02", "PHOMEMO_M04", "PHOMEMO_M_SERIES", "PHOMEMO_P12", "PHOMEMO_TSPL"})
+	@EnumSource(value = PrinterFamily.class, names = { "PHOMEMO_M02", "PHOMEMO_M04", "PHOMEMO_M_SERIES", "PHOMEMO_P12",
+			"PHOMEMO_TSPL" })
 	void unimplementedFamiliesThrowADistinctException(PrinterFamily family) {
 		PrinterDefinition definition = new PrinterDefinition("test-id", family, Collections.emptyList(), false);
 

@@ -34,9 +34,12 @@ class ImageRotationTest {
 
 	@Test
 	void rotatesAnAsymmetricMarkerCorrectly() {
-		// 3-wide x 2-tall source, only the top-left pixel (0,0) is black - an asymmetric marker so
-		// the rotation *direction* (not just the dimension swap) is actually verified, matching the
-		// same asymmetric-test-pattern principle used for the real-hardware D11_H re-verification.
+		// 3-wide x 2-tall source, only the top-left pixel (0,0) is black - an
+		// asymmetric marker so
+		// the rotation *direction* (not just the dimension swap) is actually verified,
+		// matching the
+		// same asymmetric-test-pattern principle used for the real-hardware D11_H
+		// re-verification.
 		PixelSource source = new PixelSource() {
 			@Override
 			public int getWidth() {
@@ -58,7 +61,8 @@ class ImageRotationTest {
 		assertEquals(2, rotated.getWidth());
 		assertEquals(3, rotated.getHeight());
 
-		// A 90CW rotation moves the top-left corner to the top-right corner of the new frame.
+		// A 90CW rotation moves the top-left corner to the top-right corner of the new
+		// frame.
 		assertTrue(rotated.isBlack(1, 0));
 		for (int y = 0; y < 3; y++) {
 			for (int x = 0; x < 2; x++) {

@@ -4,8 +4,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 /**
- * Sequentially reads fields out of a packet's data payload, with EOF checks. Ported from
- * niimbluelib's {@code SequentialDataReader} (src/packets/data_reader.ts).
+ * Sequentially reads fields out of a packet's data payload, with EOF checks.
+ * Ported from niimbluelib's {@code SequentialDataReader}
+ * (src/packets/data_reader.ts).
  */
 public class SequentialDataReader {
 

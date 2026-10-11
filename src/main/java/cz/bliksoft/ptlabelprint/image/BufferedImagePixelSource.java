@@ -3,13 +3,15 @@ package cz.bliksoft.ptlabelprint.image;
 import java.awt.image.BufferedImage;
 
 /**
- * Adapts a {@link BufferedImage} to {@link PixelSource} - the one shared, family-agnostic step in
- * the new image pipeline: turning arbitrary standard-Java image content into black/white pixel
- * judgments. Uses simple, fixed-threshold luminance thresholding (standard Rec. 601-ish luminance,
- * compared against a mid-range cutoff) - deliberately basic, not ordered/error-diffusion dithering,
- * matching this project's existing restraint pattern for genuinely complex nice-to-haves (e.g.
- * {@code NiimbotImageEncoder}'s un-ported check-line packets). Dithering is a documented future
- * improvement, not attempted here.
+ * Adapts a {@link BufferedImage} to {@link PixelSource} - the one shared,
+ * family-agnostic step in the new image pipeline: turning arbitrary
+ * standard-Java image content into black/white pixel judgments. Uses simple,
+ * fixed-threshold luminance thresholding (standard Rec. 601-ish luminance,
+ * compared against a mid-range cutoff) - deliberately basic, not
+ * ordered/error-diffusion dithering, matching this project's existing restraint
+ * pattern for genuinely complex nice-to-haves (e.g.
+ * {@code NiimbotImageEncoder}'s un-ported check-line packets). Dithering is a
+ * documented future improvement, not attempted here.
  */
 public class BufferedImagePixelSource implements PixelSource {
 

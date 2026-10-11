@@ -7,19 +7,20 @@ import java.util.function.Consumer;
 import com.fazecast.jSerialComm.SerialPort;
 
 /**
- * {@link Transport} over a serial port (jSerialComm) - a real one, a USB CDC one, or, the case this
- * was built for, the COM port an OS creates for a paired classic-Bluetooth device's Serial Port
- * Profile. Phomemo's own app talks to the M421 that way rather than over BLE, at roughly 2.5x the
- * throughput the printer accepts over BLE (see CLAUDE.md, "M421: what the official app does").
+ * {@link Transport} over a serial port (jSerialComm) - a real one, a USB CDC
+ * one, or, the case this was built for, the COM port an OS creates for a paired
+ * classic-Bluetooth device's Serial Port Profile. Phomemo's own app talks to
+ * the M421 that way rather than over BLE, at roughly 2.5x the throughput the
+ * printer accepts over BLE (see CLAUDE.md, "M421: what the official app does").
  *
  * <p>
- * The link does its own flow control, so {@link #writeStream} ignores the chunking/delay a BLE
- * caller asks for and just writes the data - that pacing exists to stand in for flow control BLE
- * write-without-response doesn't have.
+ * The link does its own flow control, so {@link #writeStream} ignores the
+ * chunking/delay a BLE caller asks for and just writes the data - that pacing
+ * exists to stand in for flow control BLE write-without-response doesn't have.
  *
  * <p>
- * jSerialComm is a {@code provided} dependency: only an application that actually uses this class
- * needs it on its classpath.
+ * jSerialComm is a {@code provided} dependency: only an application that
+ * actually uses this class needs it on its classpath.
  */
 public class SerialTransport implements Transport {
 
@@ -32,8 +33,9 @@ public class SerialTransport implements Transport {
 	private volatile Consumer<byte[]> rawDataListener;
 
 	/**
-	 * @param portName  e.g. {@code COM7} or {@code /dev/rfcomm0}
-	 * @param baudRate  ignored by Bluetooth and USB CDC ports, which have no real line speed
+	 * @param portName e.g. {@code COM7} or {@code /dev/rfcomm0}
+	 * @param baudRate ignored by Bluetooth and USB CDC ports, which have no real
+	 *                 line speed
 	 */
 	public SerialTransport(String portName, int baudRate) {
 		this.portName = portName;
@@ -44,7 +46,8 @@ public class SerialTransport implements Transport {
 	public void connect() throws IOException {
 		SerialPort p = SerialPort.getCommPort(portName);
 		p.setBaudRate(baudRate);
-		p.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING | SerialPort.TIMEOUT_WRITE_BLOCKING, READ_TIMEOUT_MS, 0);
+		p.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING | SerialPort.TIMEOUT_WRITE_BLOCKING, READ_TIMEOUT_MS,
+				0);
 		if (!p.openPort()) {
 			throw new IOException("Could not open serial port " + portName);
 		}

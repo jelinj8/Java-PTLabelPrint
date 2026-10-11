@@ -7,13 +7,16 @@ import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Print flow for the {@code D11_V1} print task - ported from niimbluelib's {@code OldD11PrintTask}
- * (src/print_tasks/OldD11PrintTask.ts). Per {@link NiimbotPrintTasks}' dispatch table, this is the
- * print task the plain D11 and D11S use (<b>not</b> the D11_H, which uses {@link D110V4PrintTask}).
- * Distinguishing features versus the newer tasks: {@link PacketGenerator#printClear()} before each
- * page, an explicit {@link PacketGenerator#setPrintQuantity(int)} instead of a copies-count baked
- * into the page-size packet, and completion tracked via {@link NiimbotDevice#waitForPageIndex} - an
- * unsolicited packet the printer pushes on its own, not a status poll.
+ * Print flow for the {@code D11_V1} print task - ported from niimbluelib's
+ * {@code OldD11PrintTask} (src/print_tasks/OldD11PrintTask.ts). Per
+ * {@link NiimbotPrintTasks}' dispatch table, this is the print task the plain
+ * D11 and D11S use (<b>not</b> the D11_H, which uses {@link D110V4PrintTask}).
+ * Distinguishing features versus the newer tasks:
+ * {@link PacketGenerator#printClear()} before each page, an explicit
+ * {@link PacketGenerator#setPrintQuantity(int)} instead of a copies-count baked
+ * into the page-size packet, and completion tracked via
+ * {@link NiimbotDevice#waitForPageIndex} - an unsolicited packet the printer
+ * pushes on its own, not a status poll.
  */
 public class OldD11PrintTask extends AbstractNiimbotPrintTask {
 

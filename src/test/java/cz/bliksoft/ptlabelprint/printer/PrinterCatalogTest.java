@@ -33,7 +33,8 @@ class PrinterCatalogTest {
 
 	@Test
 	void longestPrefixWinsOverShorterOne() {
-		// "Q30S..." must match the more specific Q30S entry, not the shorter Q30 entry it also
+		// "Q30S..." must match the more specific Q30S entry, not the shorter Q30 entry
+		// it also
 		// technically starts with.
 		Optional<PrinterDefinition> match = PrinterCatalog.detectUnambiguous("Q30S-1234");
 		assertTrue(match.isPresent());
@@ -42,7 +43,8 @@ class PrinterCatalogTest {
 
 	@Test
 	void longestPrefixWinsWithinNiimbotFamilyToo() {
-		// "D11_H..." must match D11_H, not the shorter D11 entry it also technically starts with.
+		// "D11_H..." must match D11_H, not the shorter D11 entry it also technically
+		// starts with.
 		Optional<PrinterDefinition> match = PrinterCatalog.detectUnambiguous("D11_H-anything");
 		assertTrue(match.isPresent());
 		assertEquals("D11_H", match.get().getId());
@@ -69,8 +71,10 @@ class PrinterCatalogTest {
 
 	@Test
 	void catalogHasNoAmbiguousEntriesAsShipped() {
-		// Every confirmed-real advertised name pattern in the catalog must resolve unambiguously -
-		// if this ever fails after adding an entry, that new entry collides with an existing one.
+		// Every confirmed-real advertised name pattern in the catalog must resolve
+		// unambiguously -
+		// if this ever fails after adding an entry, that new entry collides with an
+		// existing one.
 		for (PrinterDefinition def : PrinterCatalog.all()) {
 			for (String prefix : def.getNamePrefixes()) {
 				List<PrinterDefinition> matches = PrinterCatalog.detect(prefix);

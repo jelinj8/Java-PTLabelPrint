@@ -6,8 +6,9 @@ import java.util.List;
 
 /**
  * Parses response packets. Ported from niimbluelib's {@code PacketParser}
- * (src/packets/packet_parser.ts) - only the subset {@link NiimbotDevice} actually uses is
- * implemented; RFID/firmware/print-status-adjacent parsing beyond that is not ported yet.
+ * (src/packets/packet_parser.ts) - only the subset {@link NiimbotDevice}
+ * actually uses is implemented; RFID/firmware/print-status-adjacent parsing
+ * beyond that is not ported yet.
  */
 public class PacketParser {
 
@@ -15,13 +16,17 @@ public class PacketParser {
 	}
 
 	/**
-	 * Parse raw bytes containing one or more complete packets. Ported from niimbluelib's
-	 * {@code parsePacketBundle} - the firmware CRC32-packet branch is not ported (out of scope), so
-	 * this only recognizes plain {@link NiimbotPacket} frames.
+	 * Parse raw bytes containing one or more complete packets. Ported from
+	 * niimbluelib's {@code parsePacketBundle} - the firmware CRC32-packet branch is
+	 * not ported (out of scope), so this only recognizes plain
+	 * {@link NiimbotPacket} frames.
 	 *
-	 * @throws NiimbotProtocolException if the buffer doesn't end exactly on a frame boundary - the
-	 *         caller ({@link NiimbotDevice}) treats this as "incomplete, wait for more data", the
-	 *         same way niimbluelib's {@code processRawPacket} does.
+	 * @throws NiimbotProtocolException if the buffer doesn't end exactly on a frame
+	 *                                  boundary - the caller
+	 *                                  ({@link NiimbotDevice}) treats this as
+	 *                                  "incomplete, wait for more data", the same
+	 *                                  way niimbluelib's {@code processRawPacket}
+	 *                                  does.
 	 */
 	public static List<NiimbotPacket> parsePacketBundle(byte[] buf) {
 		List<byte[]> chunks = new ArrayList<>();
@@ -67,8 +72,8 @@ public class PacketParser {
 		}
 
 		if (bufLength != chunksDataLen) {
-			throw new NiimbotProtocolException("Split chunks data length not equal to buffer length (" + bufLength
-					+ " != " + chunksDataLen + ")");
+			throw new NiimbotProtocolException(
+					"Split chunks data length not equal to buffer length (" + bufLength + " != " + chunksDataLen + ")");
 		}
 
 		List<NiimbotPacket> packets = new ArrayList<>(chunks.size());
@@ -97,8 +102,8 @@ public class PacketParser {
 
 	public static ConnectResult parseConnectResponse(NiimbotPacket packet) {
 		requireAtLeast(packet, 1);
-		return ConnectResult.fromCode(packet.getData()[0] & 0xff)
-				.orElseThrow(() -> new NiimbotProtocolException("Unknown connect result " + (packet.getData()[0] & 0xff)));
+		return ConnectResult.fromCode(packet.getData()[0] & 0xff).orElseThrow(
+				() -> new NiimbotProtocolException("Unknown connect result " + (packet.getData()[0] & 0xff)));
 	}
 
 	public static PrinterStatusData parsePrinterStatusDataResponse(NiimbotPacket packet) {
@@ -164,9 +169,10 @@ public class PacketParser {
 	}
 
 	/**
-	 * Ported from niimbluelib's {@code parsePaperInfoResponse}. Its own comment notes the response
-	 * can come back shorter than 18 bytes with an unknown layout - only the 18-byte form is parsed
-	 * (matching upstream), anything else yields {@link PaperInfo#isValid()} {@code false}.
+	 * Ported from niimbluelib's {@code parsePaperInfoResponse}. Its own comment
+	 * notes the response can come back shorter than 18 bytes with an unknown layout
+	 * - only the 18-byte form is parsed (matching upstream), anything else yields
+	 * {@link PaperInfo#isValid()} {@code false}.
 	 */
 	public static PaperInfo parsePaperInfoResponse(NiimbotPacket packet) {
 		requireAtLeast(packet, 4);
@@ -254,10 +260,12 @@ public class PacketParser {
 		}
 		r.end();
 
-		// niimbluelib's list, plus 3586 (N1) - not in niimbluelib's list, but confirmed on a real N1:
-		// the byte reads 01 with the lid closed and 00 with it open, the same way round as its
+		// niimbluelib's list, plus 3586 (N1) - not in niimbluelib's list, but confirmed
+		// on a real N1:
+		// the byte reads 01 with the lid closed and 00 with it open, the same way round
+		// as its
 		// neighbour 3584 (B18).
-		int[] invertedLidModels = {512, 514, 513, 2304, 1792, 3584, 3586, 5120, 2560, 3840, 4352, 272, 273, 274};
+		int[] invertedLidModels = { 512, 514, 513, 2304, 1792, 3584, 3586, 5120, 2560, 3840, 4352, 272, 273, 274 };
 
 		if (modelId != null && info.getLidClosed() != null) {
 			for (int m : invertedLidModels) {

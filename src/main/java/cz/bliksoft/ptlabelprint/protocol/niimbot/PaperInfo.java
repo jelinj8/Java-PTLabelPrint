@@ -1,11 +1,12 @@
 package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
 /**
- * Loaded-paper geometry, read via {@link RequestCommandId#GET_PAPER_INFO}. Ported from
- * niimbluelib's {@code PaperInfo}/{@code getPaperInfo}. All fields beyond {@link #isValid()} are
- * {@code null} unless the printer's response has the one recognized 18-byte length - niimbluelib's
- * own comment notes shorter responses are seen too, with an as-yet-unknown layout, so those are
- * left unparsed here rather than guessed at.
+ * Loaded-paper geometry, read via {@link RequestCommandId#GET_PAPER_INFO}.
+ * Ported from niimbluelib's {@code PaperInfo}/{@code getPaperInfo}. All fields
+ * beyond {@link #isValid()} are {@code null} unless the printer's response has
+ * the one recognized 18-byte length - niimbluelib's own comment notes shorter
+ * responses are seen too, with an as-yet-unknown layout, so those are left
+ * unparsed here rather than guessed at.
  */
 public class PaperInfo {
 
@@ -132,7 +133,7 @@ public class PaperInfo {
 		return "PaperInfo{" + "valid=" + valid + ", gapHeightPixel=" + gapHeightPixel + ", totalHeightPixel="
 				+ totalHeightPixel + ", paperType=" + paperType + ", gapHeight=" + gapHeight + ", totalHeight="
 				+ totalHeight + ", paperWidthPixel=" + paperWidthPixel + ", paperWidth=" + paperWidth
-				+ ", paperHeightPixel=" + paperHeightPixel + ", paperHeight=" + paperHeight + ", direction="
-				+ direction + ", tailLengthPixel=" + tailLengthPixel + ", tailLength=" + tailLength + '}';
+				+ ", paperHeightPixel=" + paperHeightPixel + ", paperHeight=" + paperHeight + ", direction=" + direction
+				+ ", tailLengthPixel=" + tailLengthPixel + ", tailLength=" + tailLength + '}';
 	}
 }

@@ -3,10 +3,11 @@ package cz.bliksoft.ptlabelprint.protocol.phomemo;
 import cz.bliksoft.ptlabelprint.image.PixelSource;
 
 /**
- * A 1bpp raster image: {@code widthBytes} bytes per row (MSB-first, bit=1 means "print/black"),
- * {@code heightLines} rows, top-to-bottom, {@code data.length == widthBytes * heightLines}.
- * Matches the raster shape phomymo's canvas/printer code passes around
- * ({@code { data, widthBytes, heightLines } }).
+ * A 1bpp raster image: {@code widthBytes} bytes per row (MSB-first, bit=1 means
+ * "print/black"), {@code heightLines} rows, top-to-bottom,
+ * {@code data.length == widthBytes * heightLines}. Matches the raster shape
+ * phomymo's canvas/printer code passes around ({@code { data, widthBytes,
+ * heightLines } }).
  */
 public class RasterImage {
 
@@ -16,15 +17,18 @@ public class RasterImage {
 
 	public RasterImage(byte[] data, int widthBytes, int heightLines) {
 		if (data.length != widthBytes * heightLines) {
-			throw new IllegalArgumentException(
-					"data.length (" + data.length + ") must equal widthBytes*heightLines (" + (widthBytes * heightLines) + ")");
+			throw new IllegalArgumentException("data.length (" + data.length + ") must equal widthBytes*heightLines ("
+					+ (widthBytes * heightLines) + ")");
 		}
 		this.data = data;
 		this.widthBytes = widthBytes;
 		this.heightLines = heightLines;
 	}
 
-	/** Packs {@code source.isBlack(x, y)} into this class's own MSB-first, byte-per-row format. */
+	/**
+	 * Packs {@code source.isBlack(x, y)} into this class's own MSB-first,
+	 * byte-per-row format.
+	 */
 	public static RasterImage fromPixelSource(PixelSource source) {
 		int widthPx = source.getWidth();
 		int heightLines = source.getHeight();
@@ -58,8 +62,8 @@ public class RasterImage {
 
 	/**
 	 * Rotate 90 degrees clockwise. Ported from phomymo's {@code rotateRaster90CW}
-	 * (src/web/printer.js) - the D-series protocol prints labels sideways, so the print flow
-	 * rotates a normally-oriented image before sending it.
+	 * (src/web/printer.js) - the D-series protocol prints labels sideways, so the
+	 * print flow rotates a normally-oriented image before sending it.
 	 */
 	public RasterImage rotate90Clockwise() {
 		int srcWidthPx = widthBytes * 8;

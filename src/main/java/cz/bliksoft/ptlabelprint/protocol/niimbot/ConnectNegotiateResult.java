@@ -1,6 +1,8 @@
 package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
-/** Result of the initial connect handshake, before any printer info is fetched. */
+/**
+ * Result of the initial connect handshake, before any printer info is fetched.
+ */
 public class ConnectNegotiateResult {
 
 	private final ConnectResult connectResult;

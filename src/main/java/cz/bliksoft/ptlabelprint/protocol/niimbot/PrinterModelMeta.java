@@ -3,7 +3,9 @@ package cz.bliksoft.ptlabelprint.protocol.niimbot;
 import java.util.Collections;
 import java.util.List;
 
-/** Per-model capabilities. Ported from niimbluelib's {@code PrinterModelMeta}. */
+/**
+ * Per-model capabilities. Ported from niimbluelib's {@code PrinterModelMeta}.
+ */
 public class PrinterModelMeta {
 
 	private final PrinterModel model;
@@ -16,8 +18,8 @@ public class PrinterModelMeta {
 	private final int densityMax;
 	private final int densityDefault;
 
-	public PrinterModelMeta(PrinterModel model, int[] ids, int dpi, PrintDirection printDirection,
-			int printheadPixels, List<LabelType> paperTypes, int densityMin, int densityMax, int densityDefault) {
+	public PrinterModelMeta(PrinterModel model, int[] ids, int dpi, PrintDirection printDirection, int printheadPixels,
+			List<LabelType> paperTypes, int densityMin, int densityMax, int densityDefault) {
 		this.model = model;
 		this.ids = ids;
 		this.dpi = dpi;
@@ -33,7 +35,10 @@ public class PrinterModelMeta {
 		return model;
 	}
 
-	/** A model can report more than one ID (hardware revisions); this is every ID known to map to it. */
+	/**
+	 * A model can report more than one ID (hardware revisions); this is every ID
+	 * known to map to it.
+	 */
 	public int[] getIds() {
 		return ids;
 	}

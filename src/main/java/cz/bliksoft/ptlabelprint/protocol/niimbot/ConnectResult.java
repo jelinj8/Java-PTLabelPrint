@@ -7,11 +7,7 @@ import java.util.Optional;
 /** {@link ResponseCommandId#IN_CONNECT} status codes. */
 public enum ConnectResult {
 
-	DISCONNECT(0),
-	CONNECTED(1),
-	CONNECTED_NEW(2),
-	CONNECTED_V3(3),
-	FIRMWARE_ERRORS(90);
+	DISCONNECT(0), CONNECTED(1), CONNECTED_NEW(2), CONNECTED_V3(3), FIRMWARE_ERRORS(90);
 
 	private static final Map<Integer, ConnectResult> BY_CODE = new HashMap<>();
 

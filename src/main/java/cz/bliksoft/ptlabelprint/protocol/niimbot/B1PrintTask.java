@@ -7,15 +7,17 @@ import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Print flow for the {@code B1} print task - ported from niimbluelib's {@code B1PrintTask}
- * (src/print_tasks/B1PrintTask.ts). Per niimbluelib's own {@code modelPrintTasks} dispatch table
- * (see {@link NiimbotPrintTasks}), this is the print task Niimbot's <b>M2_H</b> uses (also B1,
- * D110_M protocol &lt; 4, B21_C2B, N1, D101) - despite the similarly-named {@link D110V4PrintTask}
+ * Print flow for the {@code B1} print task - ported from niimbluelib's
+ * {@code B1PrintTask} (src/print_tasks/B1PrintTask.ts). Per niimbluelib's own
+ * {@code modelPrintTasks} dispatch table (see {@link NiimbotPrintTasks}), this
+ * is the print task Niimbot's <b>M2_H</b> uses (also B1, D110_M protocol &lt;
+ * 4, B21_C2B, N1, D101) - despite the similarly-named {@link D110V4PrintTask}
  * (the {@code D110M_V4} task), which the M2_H does <b>not</b> use. Simpler than
- * {@link D110V4PrintTask}: no B21_PRO one-way-PrintStatus quirk before the image rows, no
- * one-way-Heartbeat quirk after {@code PrintEnd} (so it uses {@link AbstractNiimbotPrintTask}'s
- * plain default {@link #printEnd()} unmodified), and an explicit {@code PageStart} the D110M_V4
- * flow doesn't send.
+ * {@link D110V4PrintTask}: no B21_PRO one-way-PrintStatus quirk before the
+ * image rows, no one-way-Heartbeat quirk after {@code PrintEnd} (so it uses
+ * {@link AbstractNiimbotPrintTask}'s plain default {@link #printEnd()}
+ * unmodified), and an explicit {@code PageStart} the D110M_V4 flow doesn't
+ * send.
  *
  * <p>
  * Usage mirrors {@link D110V4PrintTask}'s own javadoc example.

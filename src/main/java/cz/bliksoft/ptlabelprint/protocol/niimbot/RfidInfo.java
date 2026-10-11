@@ -1,12 +1,13 @@
 package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
 /**
- * Consumable (paper/ribbon) NFC tag info, read via {@link RequestCommandId#RFID_INFO} /
- * {@link RequestCommandId#RFID_INFO_2}. This is where Niimbot's RFID-based consumable lock
- * surfaces in the protocol - a compatible clone printer (e.g. Phomemo's D/Q-series) that skips
- * that lock is expected to report {@link #isTagPresent()} false, or simply not enforce
- * {@link RequestCommandId#RFID_SUCCESS_TIMES}/paper-count checks the way a genuine Niimbot does;
- * confirm against real hardware rather than assuming.
+ * Consumable (paper/ribbon) NFC tag info, read via
+ * {@link RequestCommandId#RFID_INFO} / {@link RequestCommandId#RFID_INFO_2}.
+ * This is where Niimbot's RFID-based consumable lock surfaces in the protocol -
+ * a compatible clone printer (e.g. Phomemo's D/Q-series) that skips that lock
+ * is expected to report {@link #isTagPresent()} false, or simply not enforce
+ * {@link RequestCommandId#RFID_SUCCESS_TIMES}/paper-count checks the way a
+ * genuine Niimbot does; confirm against real hardware rather than assuming.
  */
 public class RfidInfo {
 
@@ -94,8 +95,8 @@ public class RfidInfo {
 
 	@Override
 	public String toString() {
-		return "RfidInfo{" + "tagPresent=" + tagPresent + ", uuid=" + uuid + ", uuid2=" + uuid2 + ", barCode="
-				+ barCode + ", serialNumber=" + serialNumber + ", allPaper=" + allPaper + ", usedPaper=" + usedPaper
+		return "RfidInfo{" + "tagPresent=" + tagPresent + ", uuid=" + uuid + ", uuid2=" + uuid2 + ", barCode=" + barCode
+				+ ", serialNumber=" + serialNumber + ", allPaper=" + allPaper + ", usedPaper=" + usedPaper
 				+ ", consumablesType=" + consumablesType + ", capacity=" + capacity + '}';
 	}
 }

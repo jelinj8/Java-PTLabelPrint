@@ -1,13 +1,15 @@
 package cz.bliksoft.ptlabelprint.image;
 
 /**
- * Rotates a {@link PixelSource} 90 degrees clockwise - a lazy wrapping transform, no buffer
- * materialized. Applied 0-3 times by callers to compose any multiple of 90 degrees (see
- * {@code printer.LabelPrinter}'s rotation algorithm, and {@code protocol.niimbot.PrinterModelMeta#getPrintDirection()}
- * for where a mandatory rotation comes from per Niimbot model). Same rotation direction as the
- * already-proven {@code protocol.phomemo.RasterImage#rotate90Clockwise()}, which keeps operating on
- * its own packed byte format independently - this class is for the pre-pack, {@link PixelSource}
- * level only.
+ * Rotates a {@link PixelSource} 90 degrees clockwise - a lazy wrapping
+ * transform, no buffer materialized. Applied 0-3 times by callers to compose
+ * any multiple of 90 degrees (see {@code printer.LabelPrinter}'s rotation
+ * algorithm, and {@code protocol.niimbot.PrinterModelMeta#getPrintDirection()}
+ * for where a mandatory rotation comes from per Niimbot model). Same rotation
+ * direction as the already-proven
+ * {@code protocol.phomemo.RasterImage#rotate90Clockwise()}, which keeps
+ * operating on its own packed byte format independently - this class is for the
+ * pre-pack, {@link PixelSource} level only.
  */
 public final class ImageRotation {
 

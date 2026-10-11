@@ -17,8 +17,10 @@ class DSeriesLabelSizesTest {
 
 	@Test
 	void defaultPresetMatchesTheOriginalHardwareConfirmedTestPattern() {
-		// 12x12mm = 96x96px pre-rotation - the exact dimensions confirmed printing correctly on a
-		// real Q30 before this preset table existed (see CLAUDE.md "Status"). Must not change.
+		// 12x12mm = 96x96px pre-rotation - the exact dimensions confirmed printing
+		// correctly on a
+		// real Q30 before this preset table existed (see CLAUDE.md "Status"). Must not
+		// change.
 		Optional<DSeriesLabelSizes.Preset> preset = DSeriesLabelSizes.find("12x12");
 		assertTrue(preset.isPresent());
 		assertEquals(12, preset.get().getWidthBytes());

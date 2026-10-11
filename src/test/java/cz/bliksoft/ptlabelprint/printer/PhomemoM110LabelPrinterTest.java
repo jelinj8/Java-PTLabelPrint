@@ -20,11 +20,12 @@ import cz.bliksoft.ptlabelprint.protocol.Transport;
 
 class PhomemoM110LabelPrinterTest {
 
-	private static final byte[] FOOTER = {0x1f, (byte) 0xf0, 0x05, 0x00, 0x1f, (byte) 0xf0, 0x03, 0x00};
+	private static final byte[] FOOTER = { 0x1f, (byte) 0xf0, 0x05, 0x00, 0x1f, (byte) 0xf0, 0x03, 0x00 };
 
 	/**
-	 * Records everything written, as one stream, and - like the real M421 - reports the job finished
-	 * once the footer arrives, so print() doesn't sit out its completion timeout.
+	 * Records everything written, as one stream, and - like the real M421 - reports
+	 * the job finished once the footer arrives, so print() doesn't sit out its
+	 * completion timeout.
 	 */
 	private static final class RecordingTransport implements Transport {
 		final ByteArrayOutputStream written = new ByteArrayOutputStream();
@@ -48,7 +49,7 @@ class PhomemoM110LabelPrinterTest {
 		public void write(byte[] data) {
 			written.write(data, 0, data.length);
 			if (Arrays.equals(data, FOOTER) && listener != null) {
-				listener.accept(failJob ? new byte[] {0x1a, 0x0b, (byte) 0xb8} : new byte[] {0x1a, 0x0f, 0x0c});
+				listener.accept(failJob ? new byte[] { 0x1a, 0x0b, (byte) 0xb8 } : new byte[] { 0x1a, 0x0f, 0x0c });
 			}
 		}
 
@@ -73,9 +74,9 @@ class PhomemoM110LabelPrinterTest {
 	}
 
 	/**
-	 * Like the real M421: announces 7 write credits and a 182-byte maximum write on connect, then
-	 * hands a credit back per write taken - unless {@code full}, when it withholds them the way a
-	 * printer with a full receive buffer does.
+	 * Like the real M421: announces 7 write credits and a 182-byte maximum write on
+	 * connect, then hands a credit back per write taken - unless {@code full}, when
+	 * it withholds them the way a printer with a full receive buffer does.
 	 */
 	private static final class CreditingTransport implements Transport {
 		final List<byte[]> writes = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -89,8 +90,8 @@ class PhomemoM110LabelPrinterTest {
 
 		@Override
 		public void connect() {
-			listener.accept(new byte[] {0x01, 0x07});
-			listener.accept(new byte[] {0x02, (byte) 0xb6, 0x00});
+			listener.accept(new byte[] { 0x01, 0x07 });
+			listener.accept(new byte[] { 0x02, (byte) 0xb6, 0x00 });
 		}
 
 		@Override
@@ -106,18 +107,18 @@ class PhomemoM110LabelPrinterTest {
 		public synchronized void write(byte[] data) {
 			writes.add(data);
 			if (Arrays.equals(data, FOOTER)) {
-				listener.accept(new byte[] {0x1a, 0x0f, 0x0c});
+				listener.accept(new byte[] { 0x1a, 0x0f, 0x0c });
 			} else if (full) {
 				withheld++;
 			} else {
-				listener.accept(new byte[] {0x01, 0x01});
+				listener.accept(new byte[] { 0x01, 0x01 });
 			}
 		}
 
 		synchronized void drain() {
 			full = false;
 			for (; withheld > 0; withheld--) {
-				listener.accept(new byte[] {0x01, 0x01});
+				listener.accept(new byte[] { 0x01, 0x01 });
 			}
 		}
 
@@ -137,7 +138,8 @@ class PhomemoM110LabelPrinterTest {
 		printer.print(solid(800, 400), new PrintJob());
 		long elapsed = System.currentTimeMillis() - start;
 
-		// 100 bytes x 400 rows = 40000 bytes = 220 writes of up to 182 bytes, after 4 commands, before the footer
+		// 100 bytes x 400 rows = 40000 bytes = 220 writes of up to 182 bytes, after 4
+		// commands, before the footer
 		assertEquals(4 + 220 + 1, transport.writes.size());
 		assertEquals(182, transport.writes.get(4).length);
 		// phomymo's pacing would need 313 chunks x 20ms = over 6s
@@ -196,19 +198,18 @@ class PhomemoM110LabelPrinterTest {
 		m421(transport).print(solid(320, 160), new PrintJob());
 
 		byte[] out = transport.written.toByteArray();
-		byte[] expectedPrefix = {
-				0x1b, 0x4e, 0x0d, 5,
-				0x1b, 0x4e, 0x04, 10,
-				0x1f, 0x11, 0x0a,
-				0x1d, 0x76, 0x30, 0x00, 40, 0, (byte) 160, 0,
-		};
+		byte[] expectedPrefix = { 0x1b, 0x4e, 0x0d, 5, 0x1b, 0x4e, 0x04, 10, 0x1f, 0x11, 0x0a, 0x1d, 0x76, 0x30, 0x00,
+				40, 0, (byte) 160, 0, };
 		assertArrayEquals(expectedPrefix, Arrays.copyOfRange(out, 0, expectedPrefix.length));
 		assertEquals(expectedPrefix.length + 40 * 160 + 8, out.length);
 		assertEquals((byte) 0xff, out[expectedPrefix.length]);
 		assertArrayEquals(FOOTER, Arrays.copyOfRange(out, out.length - 8, out.length));
 	}
 
-	/** On the M421 the gap is applied as given: 1mm at 203 DPI is 8 dots further right. */
+	/**
+	 * On the M421 the gap is applied as given: 1mm at 203 DPI is 8 dots further
+	 * right.
+	 */
 	@Test
 	void mediaSideGapMovesTheImageRight() throws Exception {
 		RecordingTransport gap = new RecordingTransport();
@@ -218,7 +219,7 @@ class PhomemoM110LabelPrinterTest {
 		assertEquals(0x00, out[19]);
 		assertEquals((byte) 0xff, out[20]);
 
-		for (Double none : new Double[] {null, 0.0}) {
+		for (Double none : new Double[] { null, 0.0 }) {
 			RecordingTransport unshifted = new RecordingTransport();
 			m421(unshifted).print(solid(320, 4), new PrintJob().setMediaSideGapMm(none));
 			out = unshifted.written.toByteArray();
@@ -227,7 +228,10 @@ class PhomemoM110LabelPrinterTest {
 		}
 	}
 
-	/** Row {@code y} of a job's raster as sent, for an 8px-wide (1 byte per row) image. */
+	/**
+	 * Row {@code y} of a job's raster as sent, for an 8px-wide (1 byte per row)
+	 * image.
+	 */
 	private static int[] rows(RecordingTransport transport) {
 		byte[] out = transport.written.toByteArray();
 		int height = (out[17] & 0xff) | ((out[18] & 0xff) << 8);
@@ -238,7 +242,10 @@ class PhomemoM110LabelPrinterTest {
 		return rows;
 	}
 
-	/** 8px wide, 24 rows: only row 0 and row 23 are black - so both ends of the image are recognisable. */
+	/**
+	 * 8px wide, 24 rows: only row 0 and row 23 are black - so both ends of the
+	 * image are recognisable.
+	 */
 	private static BufferedImage endMarkers() {
 		BufferedImage img = new BufferedImage(8, 24, BufferedImage.TYPE_INT_RGB);
 		Graphics2D g = img.createGraphics();

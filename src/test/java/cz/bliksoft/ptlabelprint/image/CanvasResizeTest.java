@@ -41,7 +41,8 @@ class CanvasResizeTest {
 
 		assertEquals(4, resized.getWidth());
 		assertEquals(8, resized.getHeight());
-		// offset = (8-4)/2 = 2: rows 0-1 padding (white), rows 2-5 source content (black), rows 6-7 padding (white)
+		// offset = (8-4)/2 = 2: rows 0-1 padding (white), rows 2-5 source content
+		// (black), rows 6-7 padding (white)
 		assertFalse(resized.isBlack(0, 0));
 		assertFalse(resized.isBlack(0, 1));
 		assertTrue(resized.isBlack(0, 2));

@@ -8,17 +8,20 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * Print flow for the {@code B21_L2B} print task - ported from niimbluelib's
- * {@code B21L2BPrintTask} (src/print_tasks/B21L2BPrintTask.ts). Per {@link NiimbotPrintTasks}'
- * dispatch table, this is the print task the B21_L2B uses. The most structurally different task in
- * this package: instead of a status/PrintEnd poll, each copy in {@link #printPage} retries
- * {@link NiimbotDevice#pageStart()} until it returns {@code true} (ported from niimbluelib's
- * {@code Utils.doUntilTrue}), and per-page completion is a separate retry loop on
- * {@link NiimbotDevice#pageEnd()} in {@link #waitForPageFinished()} - which, unlike every other
- * task here, is the method that actually does the waiting. {@link #waitForFinished()} itself is a
- * deliberate no-op, matching niimbluelib exactly: <b>a caller printing multiple pages with this
- * task must call {@link #waitForPageFinished()} once per page</b> (e.g. after each
- * {@link #printPage} call in a per-page loop), not just once at the end - this project's simpler
- * {@code Cli} single-page usage doesn't currently exercise that multi-page loop.
+ * {@code B21L2BPrintTask} (src/print_tasks/B21L2BPrintTask.ts). Per
+ * {@link NiimbotPrintTasks}' dispatch table, this is the print task the B21_L2B
+ * uses. The most structurally different task in this package: instead of a
+ * status/PrintEnd poll, each copy in {@link #printPage} retries
+ * {@link NiimbotDevice#pageStart()} until it returns {@code true} (ported from
+ * niimbluelib's {@code Utils.doUntilTrue}), and per-page completion is a
+ * separate retry loop on {@link NiimbotDevice#pageEnd()} in
+ * {@link #waitForPageFinished()} - which, unlike every other task here, is the
+ * method that actually does the waiting. {@link #waitForFinished()} itself is a
+ * deliberate no-op, matching niimbluelib exactly: <b>a caller printing multiple
+ * pages with this task must call {@link #waitForPageFinished()} once per
+ * page</b> (e.g. after each {@link #printPage} call in a per-page loop), not
+ * just once at the end - this project's simpler {@code Cli} single-page usage
+ * doesn't currently exercise that multi-page loop.
  */
 public class B21L2BPrintTask extends AbstractNiimbotPrintTask {
 

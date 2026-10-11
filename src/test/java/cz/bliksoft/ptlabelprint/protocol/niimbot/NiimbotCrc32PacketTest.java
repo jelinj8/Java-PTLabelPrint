@@ -11,7 +11,7 @@ class NiimbotCrc32PacketTest {
 	@Test
 	void roundTripsThroughBytes() {
 		NiimbotCrc32Packet packet = new NiimbotCrc32Packet(RequestCommandId.FIRMWARE_CHUNK.getCode(), 258,
-				new byte[] {1, 2, 3, 4});
+				new byte[] { 1, 2, 3, 4 });
 
 		byte[] bytes = packet.toBytes();
 		assertEquals(NiimbotPacket.HEAD.length + 1 + 2 + 1 + 4 + 4 + NiimbotPacket.TAIL.length, bytes.length);
@@ -25,12 +25,13 @@ class NiimbotCrc32PacketTest {
 		NiimbotCrc32Packet parsed = NiimbotCrc32Packet.fromBytes(bytes);
 		assertEquals(RequestCommandId.FIRMWARE_CHUNK.getCode(), parsed.getCommand());
 		assertEquals(258, parsed.getChunkNumber());
-		assertArrayEquals(new byte[] {1, 2, 3, 4}, parsed.getData());
+		assertArrayEquals(new byte[] { 1, 2, 3, 4 }, parsed.getData());
 	}
 
 	@Test
 	void chunkNumberZeroRoundTrips() {
-		NiimbotCrc32Packet packet = new NiimbotCrc32Packet(RequestCommandId.FIRMWARE_CRC.getCode(), 0, new byte[] {9, 9, 9, 9});
+		NiimbotCrc32Packet packet = new NiimbotCrc32Packet(RequestCommandId.FIRMWARE_CRC.getCode(), 0,
+				new byte[] { 9, 9, 9, 9 });
 		NiimbotCrc32Packet parsed = NiimbotCrc32Packet.fromBytes(packet.toBytes());
 		assertEquals(0, parsed.getChunkNumber());
 		assertArrayEquals(packet.getData(), parsed.getData());
@@ -38,7 +39,8 @@ class NiimbotCrc32PacketTest {
 
 	@Test
 	void rejectsBadChecksum() {
-		byte[] bytes = new NiimbotCrc32Packet(RequestCommandId.FIRMWARE_CHUNK.getCode(), 1, new byte[] {1, 2}).toBytes();
+		byte[] bytes = new NiimbotCrc32Packet(RequestCommandId.FIRMWARE_CHUNK.getCode(), 1, new byte[] { 1, 2 })
+				.toBytes();
 		bytes[bytes.length - 3] ^= (byte) 0xff; // corrupt a CRC32 byte (last CRC byte is 3 before the tail)
 
 		assertThrows(NiimbotProtocolException.class, () -> NiimbotCrc32Packet.fromBytes(bytes));
@@ -46,7 +48,8 @@ class NiimbotCrc32PacketTest {
 
 	@Test
 	void rejectsBadHead() {
-		byte[] bytes = new NiimbotCrc32Packet(RequestCommandId.FIRMWARE_CHUNK.getCode(), 1, new byte[] {1, 2}).toBytes();
+		byte[] bytes = new NiimbotCrc32Packet(RequestCommandId.FIRMWARE_CHUNK.getCode(), 1, new byte[] { 1, 2 })
+				.toBytes();
 		bytes[0] = 0x00;
 
 		assertThrows(NiimbotProtocolException.class, () -> NiimbotCrc32Packet.fromBytes(bytes));
@@ -54,6 +57,6 @@ class NiimbotCrc32PacketTest {
 
 	@Test
 	void rejectsTooSmallBuffer() {
-		assertThrows(NiimbotProtocolException.class, () -> NiimbotCrc32Packet.fromBytes(new byte[] {0x55, 0x55}));
+		assertThrows(NiimbotProtocolException.class, () -> NiimbotCrc32Packet.fromBytes(new byte[] { 0x55, 0x55 }));
 	}
 }

@@ -7,21 +7,26 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Model → print-task dispatch, ported from niimbluelib's {@code modelPrintTasks}/
- * {@code findPrintTask} (src/print_tasks/index.ts). An exact {@code {model, protocolVersion}}
- * match wins over a bare-{@code model} match - mirrors niimbluelib's own two-level lookup, since a
- * model can switch print tasks across a protocol-version bump (e.g. D110_M uses {@link B1PrintTask}
- * below protocol v4, {@link D110V4PrintTask} at v4).
+ * Model → print-task dispatch, ported from niimbluelib's
+ * {@code modelPrintTasks}/ {@code findPrintTask} (src/print_tasks/index.ts). An
+ * exact {@code {model, protocolVersion}} match wins over a bare-{@code model}
+ * match - mirrors niimbluelib's own two-level lookup, since a model can switch
+ * print tasks across a protocol-version bump (e.g. D110_M uses
+ * {@link B1PrintTask} below protocol v4, {@link D110V4PrintTask} at v4).
  *
  * <p>
  * {@link #findPrintTask} returns empty for any model not listed here - most of
- * {@link PrinterModel}'s 77 entries aren't, since niimbluelib itself has no dedicated print task
- * for them either (this project doesn't invent one). Callers must handle that explicitly rather
- * than falling back to a guessed task.
+ * {@link PrinterModel}'s 77 entries aren't, since niimbluelib itself has no
+ * dedicated print task for them either (this project doesn't invent one).
+ * Callers must handle that explicitly rather than falling back to a guessed
+ * task.
  */
 public final class NiimbotPrintTasks {
 
-	/** Builds a print task from a connected device and print options - one per concrete {@link AbstractNiimbotPrintTask} subclass. */
+	/**
+	 * Builds a print task from a connected device and print options - one per
+	 * concrete {@link AbstractNiimbotPrintTask} subclass.
+	 */
 	@FunctionalInterface
 	public interface TaskFactory {
 		AbstractNiimbotPrintTask create(NiimbotDevice device, PrintOptions options);
@@ -73,7 +78,8 @@ public final class NiimbotPrintTasks {
 		registerBareModel(B1PrintTask::new, PrinterModel.D110_M, PrinterModel.B1, PrinterModel.B21_C2B,
 				PrinterModel.M2_H, PrinterModel.N1, PrinterModel.D101);
 
-		// D110M_V4 (D110V4PrintTask) - plus a versioned override for D110_M at protocol v4
+		// D110M_V4 (D110V4PrintTask) - plus a versioned override for D110_M at protocol
+		// v4
 		registerBareModel(D110V4PrintTask::new, PrinterModel.D11_H, PrinterModel.B21_PRO, PrinterModel.B1_PRO,
 				PrinterModel.C1, PrinterModel.EP1C);
 		registerVersioned(D110V4PrintTask::new, PrinterModel.D110_M, 4);
@@ -96,9 +102,9 @@ public final class NiimbotPrintTasks {
 	}
 
 	/**
-	 * The print-task factory for {@code model} at {@code protocolVersion} - an exact
-	 * {@code {model, protocolVersion}} match wins over a bare-{@code model} match. Empty if this
-	 * model has no ported print task at all.
+	 * The print-task factory for {@code model} at {@code protocolVersion} - an
+	 * exact {@code {model, protocolVersion}} match wins over a bare-{@code model}
+	 * match. Empty if this model has no ported print task at all.
 	 */
 	public static Optional<TaskFactory> findPrintTask(PrinterModel model, int protocolVersion) {
 		if (model == null) {

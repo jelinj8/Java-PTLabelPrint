@@ -7,14 +7,16 @@ import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Print flow for the {@code H1S} print task - ported from niimbluelib's {@code H1SPrintTask}
- * (src/print_tasks/H1SPrintTask.ts). Per {@link NiimbotPrintTasks}' dispatch table, this is the
- * print task the H1S uses. The simplest task in this package: a 2-byte {@code PrintStart}
+ * Print flow for the {@code H1S} print task - ported from niimbluelib's
+ * {@code H1SPrintTask} (src/print_tasks/H1SPrintTask.ts). Per
+ * {@link NiimbotPrintTasks}' dispatch table, this is the print task the H1S
+ * uses. The simplest task in this package: a 2-byte {@code PrintStart}
  * ({@link PacketGenerator#printStart2b}), a 9-byte page size
- * ({@link PacketGenerator#setPageSize9b}, cut height/type always 0 - niimbluelib doesn't expose
- * them for this task either), and otherwise identical to {@link AbstractNiimbotPrintTask}'s shared
- * defaults for {@code waitForFinished}/{@code printEnd}/{@code isSupportColor} - no overrides
- * needed for any of them.
+ * ({@link PacketGenerator#setPageSize9b}, cut height/type always 0 -
+ * niimbluelib doesn't expose them for this task either), and otherwise
+ * identical to {@link AbstractNiimbotPrintTask}'s shared defaults for
+ * {@code waitForFinished}/{@code printEnd}/{@code isSupportColor} - no
+ * overrides needed for any of them.
  */
 public class H1SPrintTask extends AbstractNiimbotPrintTask {
 

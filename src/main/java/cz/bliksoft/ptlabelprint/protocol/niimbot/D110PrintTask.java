@@ -7,17 +7,21 @@ import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Print flow for the {@code D110} print task - ported from niimbluelib's {@code D110PrintTask}
- * (src/print_tasks/D110PrintTask.ts). Per {@link NiimbotPrintTasks}' dispatch table, this is the
- * print task B21S/B21S_C2B/D110 use (also plain D11 at protocol v1/v2 - <b>not</b> D11/D11S at
- * their default protocol version, which use {@link OldD11PrintTask}). Same
- * {@link PacketGenerator#printClear()}/{@link PacketGenerator#setPrintQuantity(int)} shape as
- * {@link OldD11PrintTask}, but a 4-byte page size ({@link PacketGenerator#setPageSize4b}, rows
- * <i>and</i> cols) and completion tracked by status-polling against {@link #getPagesPrinted()}
- * (how many pages have actually been sent so far) rather than the configured
+ * Print flow for the {@code D110} print task - ported from niimbluelib's
+ * {@code D110PrintTask} (src/print_tasks/D110PrintTask.ts). Per
+ * {@link NiimbotPrintTasks}' dispatch table, this is the print task
+ * B21S/B21S_C2B/D110 use (also plain D11 at protocol v1/v2 - <b>not</b>
+ * D11/D11S at their default protocol version, which use
+ * {@link OldD11PrintTask}). Same
+ * {@link PacketGenerator#printClear()}/{@link PacketGenerator#setPrintQuantity(int)}
+ * shape as {@link OldD11PrintTask}, but a 4-byte page size
+ * ({@link PacketGenerator#setPageSize4b}, rows <i>and</i> cols) and completion
+ * tracked by status-polling against {@link #getPagesPrinted()} (how many pages
+ * have actually been sent so far) rather than the configured
  * {@link PrintOptions#getTotalPages()} - ported verbatim from niimbluelib's own
- * {@code waitForPageFinished}/{@code waitForFinished} split, kept "for compatibility with previous
- * versions" per niimbluelib's own comment even though it sends one redundant packet.
+ * {@code waitForPageFinished}/{@code waitForFinished} split, kept "for
+ * compatibility with previous versions" per niimbluelib's own comment even
+ * though it sends one redundant packet.
  */
 public class D110PrintTask extends AbstractNiimbotPrintTask {
 

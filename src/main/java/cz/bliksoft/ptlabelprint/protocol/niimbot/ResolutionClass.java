@@ -1,10 +1,12 @@
 package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
-/** Sent with {@code PrintBitmapRowDoubleColor} (not yet ported); also appears in heartbeat printer info. */
+/**
+ * Sent with {@code PrintBitmapRowDoubleColor} (not yet ported); also appears in
+ * heartbeat printer info.
+ */
 public enum ResolutionClass {
 
-	DPI_203(2),
-	DPI_300(3);
+	DPI_203(2), DPI_300(3);
 
 	private final int code;
 

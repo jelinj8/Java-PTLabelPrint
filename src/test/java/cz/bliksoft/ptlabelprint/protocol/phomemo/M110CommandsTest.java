@@ -23,24 +23,25 @@ class M110CommandsTest {
 
 	@Test
 	void speedAndDensityBytes() {
-		assertArrayEquals(new byte[] {0x1b, 0x4e, 0x0d, 5}, M110Commands.speed(5));
-		assertArrayEquals(new byte[] {0x1b, 0x4e, 0x04, 10}, M110Commands.density(10));
+		assertArrayEquals(new byte[] { 0x1b, 0x4e, 0x0d, 5 }, M110Commands.speed(5));
+		assertArrayEquals(new byte[] { 0x1b, 0x4e, 0x04, 10 }, M110Commands.density(10));
 	}
 
 	@Test
 	void mediaTypeBytes() {
-		assertArrayEquals(new byte[] {0x1f, 0x11, 0x0a}, M110Commands.mediaType(false));
-		assertArrayEquals(new byte[] {0x1f, 0x11, 0x0b}, M110Commands.mediaType(true));
+		assertArrayEquals(new byte[] { 0x1f, 0x11, 0x0a }, M110Commands.mediaType(false));
+		assertArrayEquals(new byte[] { 0x1f, 0x11, 0x0b }, M110Commands.mediaType(true));
 	}
 
 	@Test
 	void rasterHeaderLittleEndianSplit() {
 		// widthBytes=40, heightLines=300 (300 = 1*256 + 44)
-		assertArrayEquals(new byte[] {0x1d, 0x76, 0x30, 0x00, 40, 0, 44, 1}, M110Commands.rasterHeader(40, 300));
+		assertArrayEquals(new byte[] { 0x1d, 0x76, 0x30, 0x00, 40, 0, 44, 1 }, M110Commands.rasterHeader(40, 300));
 	}
 
 	@Test
 	void footerBytes() {
-		assertArrayEquals(new byte[] {0x1f, (byte) 0xf0, 0x05, 0x00, 0x1f, (byte) 0xf0, 0x03, 0x00}, M110Commands.FOOTER);
+		assertArrayEquals(new byte[] { 0x1f, (byte) 0xf0, 0x05, 0x00, 0x1f, (byte) 0xf0, 0x03, 0x00 },
+				M110Commands.FOOTER);
 	}
 }

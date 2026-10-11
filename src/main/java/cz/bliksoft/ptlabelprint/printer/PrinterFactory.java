@@ -3,11 +3,13 @@ package cz.bliksoft.ptlabelprint.printer;
 import cz.bliksoft.ptlabelprint.protocol.Transport;
 
 /**
- * Constructs the right concrete {@link LabelPrinter} for a {@link PrinterDefinition}, given a
- * {@link Transport} the caller has already built - not a BLE-specific type, so a caller can supply
- * a {@code BleTransport} wrapping a {@code BlePeripheral} obtained through either a local- or
- * remote-backed BLE adapter (once BSToolbox-BLE ships its own local/remote split, still uncommitted
- * upstream as of this writing - see CLAUDE.md), or a future {@code SerialTransport}, unchanged.
+ * Constructs the right concrete {@link LabelPrinter} for a
+ * {@link PrinterDefinition}, given a {@link Transport} the caller has already
+ * built - not a BLE-specific type, so a caller can supply a
+ * {@code BleTransport} wrapping a {@code BlePeripheral} obtained through either
+ * a local- or remote-backed BLE adapter (once BSToolbox-BLE ships its own
+ * local/remote split, still uncommitted upstream as of this writing - see
+ * CLAUDE.md), or a future {@code SerialTransport}, unchanged.
  */
 public final class PrinterFactory {
 
@@ -15,11 +17,16 @@ public final class PrinterFactory {
 	}
 
 	/**
-	 * @throws UnimplementedPrinterFamilyException if {@code definition}'s family is a real,
-	 *         cataloged family with no {@link LabelPrinter} implementation yet (currently the 5
-	 *         {@code PHOMEMO_*} families other than {@link PrinterFamily#PHOMEMO_D_SERIES}/
-	 *         {@link PrinterFamily#PHOMEMO_M110} - see
-	 *         {@link PrinterFamily}'s own javadoc)
+	 * @throws UnimplementedPrinterFamilyException if {@code definition}'s family is
+	 *                                             a real, cataloged family with no
+	 *                                             {@link LabelPrinter}
+	 *                                             implementation yet (currently the
+	 *                                             5 {@code PHOMEMO_*} families
+	 *                                             other than
+	 *                                             {@link PrinterFamily#PHOMEMO_D_SERIES}/
+	 *                                             {@link PrinterFamily#PHOMEMO_M110}
+	 *                                             - see {@link PrinterFamily}'s own
+	 *                                             javadoc)
 	 */
 	public static LabelPrinter create(PrinterDefinition definition, Transport transport) {
 		switch (definition.getFamily()) {
@@ -37,7 +44,8 @@ public final class PrinterFactory {
 			throw new UnimplementedPrinterFamilyException(definition);
 		default:
 			// Unreachable today - every PrinterFamily constant is handled above. Kept as a
-			// defensive fallback for a future enum constant added without a matching case here.
+			// defensive fallback for a future enum constant added without a matching case
+			// here.
 			throw new IllegalArgumentException("No LabelPrinter implementation for " + definition.getFamily());
 		}
 	}

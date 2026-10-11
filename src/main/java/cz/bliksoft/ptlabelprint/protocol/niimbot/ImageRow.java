@@ -1,12 +1,13 @@
 package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
-/** One row (or a repeated run of identical rows) of an {@link EncodedImage}. Ported from niimbluelib's {@code ImageRow}. */
+/**
+ * One row (or a repeated run of identical rows) of an {@link EncodedImage}.
+ * Ported from niimbluelib's {@code ImageRow}.
+ */
 public class ImageRow {
 
 	public enum DataType {
-		VOID,
-		PIXELS,
-		CHECK
+		VOID, PIXELS, CHECK
 	}
 
 	private final DataType dataType;

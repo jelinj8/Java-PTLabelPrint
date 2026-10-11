@@ -26,7 +26,7 @@ class PacketParserTest {
 
 	@Test
 	void throwsOnIncompleteTrailingFrame() {
-		byte[] complete = new NiimbotPacket(RequestCommandId.PRINTER_INFO, new byte[] {8}).toBytes();
+		byte[] complete = new NiimbotPacket(RequestCommandId.PRINTER_INFO, new byte[] { 8 }).toBytes();
 		// drop the last two (tail) bytes to simulate a frame still arriving
 		byte[] incomplete = java.util.Arrays.copyOfRange(complete, 0, complete.length - 2);
 
@@ -35,48 +35,52 @@ class PacketParserTest {
 
 	@Test
 	void parsesConnectResponse() {
-		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_CONNECT.getCode(), new byte[] {3});
+		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_CONNECT.getCode(), new byte[] { 3 });
 		assertEquals(ConnectResult.CONNECTED_V3, PacketParser.parseConnectResponse(packet));
 	}
 
 	@Test
 	void batteryLevelBelowFiveIsScaledToPercent() {
-		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_PRINTER_INFO_CHARGE_LEVEL.getCode(), new byte[] {3});
+		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_PRINTER_INFO_CHARGE_LEVEL.getCode(),
+				new byte[] { 3 });
 		assertEquals(75, PacketParser.parseBatteryChargeLevelResponse(packet));
 	}
 
 	@Test
 	void batteryLevelAboveFourIsReturnedAsIs() {
-		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_PRINTER_INFO_CHARGE_LEVEL.getCode(), new byte[] {60});
+		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_PRINTER_INFO_CHARGE_LEVEL.getCode(),
+				new byte[] { 60 });
 		assertEquals(60, PacketParser.parseBatteryChargeLevelResponse(packet));
 	}
 
 	@Test
 	void serialNumberShorterThanFourBytesIsUnknown() {
-		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_PRINTER_INFO_SERIAL_NUMBER.getCode(), new byte[] {1, 2});
+		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_PRINTER_INFO_SERIAL_NUMBER.getCode(),
+				new byte[] { 1, 2 });
 		assertEquals("-1", PacketParser.parsePrinterSerialNumberResponse(packet));
 	}
 
 	@Test
 	void serialNumberAtLeastEightBytesIsAscii() {
-		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_PRINTER_INFO_SERIAL_NUMBER.getCode(), "ABCDEFGH".getBytes());
+		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_PRINTER_INFO_SERIAL_NUMBER.getCode(),
+				"ABCDEFGH".getBytes());
 		assertEquals("ABCDEFGH", PacketParser.parsePrinterSerialNumberResponse(packet));
 	}
 
 	@Test
 	void parsesPaperInfoResponse() {
-		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_CALIBRATE_HEIGHT.getCode(), new byte[] {
-				0x00, 0x1e, // gapHeightPixel = 30
-				0x02, 0x76, // totalHeightPixel = 630
-				0x01, // paperType = WITH_GAPS
-				0x01, 0x2c, // gapHeight = 300 -> 30.0mm
-				0x02, 0x76, // totalHeight = 630 -> 63.0mm
-				0x01, (byte) 0x80, // paperWidthPixel = 384
-				0x01, 0x40, // paperWidth = 320 -> 32.0mm
-				0x00, // direction = 0
-				0x00, 0x14, // tailLengthPixel = 20
-				0x00, 0x14, // tailLength = 20 -> 2.0mm
-		});
+		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_CALIBRATE_HEIGHT.getCode(),
+				new byte[] { 0x00, 0x1e, // gapHeightPixel = 30
+						0x02, 0x76, // totalHeightPixel = 630
+						0x01, // paperType = WITH_GAPS
+						0x01, 0x2c, // gapHeight = 300 -> 30.0mm
+						0x02, 0x76, // totalHeight = 630 -> 63.0mm
+						0x01, (byte) 0x80, // paperWidthPixel = 384
+						0x01, 0x40, // paperWidth = 320 -> 32.0mm
+						0x00, // direction = 0
+						0x00, 0x14, // tailLengthPixel = 20
+						0x00, 0x14, // tailLength = 20 -> 2.0mm
+				});
 
 		PaperInfo info = PacketParser.parsePaperInfoResponse(packet);
 
@@ -98,18 +102,22 @@ class PacketParserTest {
 
 	@Test
 	void paperInfoResponseWithUnrecognizedLengthIsInvalid() {
-		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_CALIBRATE_HEIGHT.getCode(), new byte[] {1, 2, 3, 4});
+		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_CALIBRATE_HEIGHT.getCode(),
+				new byte[] { 1, 2, 3, 4 });
 		assertEquals(false, PacketParser.parsePaperInfoResponse(packet).isValid());
 	}
 
 	@Test
 	void serialNumberBetweenFourAndSevenBytesIsHex() {
 		NiimbotPacket packet = new NiimbotPacket(ResponseCommandId.IN_PRINTER_INFO_SERIAL_NUMBER.getCode(),
-				new byte[] {0x01, 0x02, 0x03, 0x04, 0x05});
+				new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05 });
 		assertEquals("01020304", PacketParser.parsePrinterSerialNumberResponse(packet));
 	}
 
-	/** Both replies captured from a real N1 (model 3586), whose lid byte is inverted like the B18's. */
+	/**
+	 * Both replies captured from a real N1 (model 3586), whose lid byte is inverted
+	 * like the B18's.
+	 */
 	@Test
 	void n1HeartbeatLidIsInverted() {
 		NiimbotPacket closed = new NiimbotPacket(ResponseCommandId.IN_HEARTBEAT_ADVANCED_1.getCode(),

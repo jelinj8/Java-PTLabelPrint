@@ -37,7 +37,10 @@ class NiimbotImageEncoderTest {
 		assertEquals(10, rows.get(0).getRepeat());
 	}
 
-	/** A run of identical rows longer than a byte can count - the case that printed only the top of a label on a real M2_H. */
+	/**
+	 * A run of identical rows longer than a byte can count - the case that printed
+	 * only the top of a label on a real M2_H.
+	 */
 	@Test
 	void longRunOfIdenticalRowsNeverExceedsOneByteRepeat() {
 		PixelSource source = new PixelSource() {
@@ -102,28 +105,29 @@ class NiimbotImageEncoderTest {
 		assertEquals(ImageRow.DataType.VOID, rows.get(0).getDataType());
 		assertEquals(ImageRow.DataType.PIXELS, rows.get(1).getDataType());
 		assertEquals(1, rows.get(1).getBlackPixelsCount());
-		assertArrayEquals(new byte[] {(byte) 0x80}, rows.get(1).getRowDataBlack());
+		assertArrayEquals(new byte[] { (byte) 0x80 }, rows.get(1).getRowDataBlack());
 		assertEquals(ImageRow.DataType.VOID, rows.get(2).getDataType());
 	}
 
 	@Test
 	void indexPixelsFindsLeftmostBit() {
-		byte[] indexes = NiimbotImageEncoder.indexPixels(new byte[] {(byte) 0x80});
+		byte[] indexes = NiimbotImageEncoder.indexPixels(new byte[] { (byte) 0x80 });
 		// leftmost pixel (bit 7) is absolute index 0, encoded big-endian 16-bit
-		assertArrayEquals(new byte[] {0x00, 0x00}, indexes);
+		assertArrayEquals(new byte[] { 0x00, 0x00 }, indexes);
 	}
 
 	@Test
 	void indexPixelsFindsMultipleBitsAcrossBytes() {
-		// byte0 = 0x01 (rightmost pixel, index 7), byte1 = 0x80 (leftmost pixel of 2nd byte, index 8)
-		byte[] indexes = NiimbotImageEncoder.indexPixels(new byte[] {0x01, (byte) 0x80});
-		assertArrayEquals(new byte[] {0x00, 0x07, 0x00, 0x08}, indexes);
+		// byte0 = 0x01 (rightmost pixel, index 7), byte1 = 0x80 (leftmost pixel of 2nd
+		// byte, index 8)
+		byte[] indexes = NiimbotImageEncoder.indexPixels(new byte[] { 0x01, (byte) 0x80 });
+		assertArrayEquals(new byte[] { 0x00, 0x07, 0x00, 0x08 }, indexes);
 	}
 
 	@Test
 	void countPixelsForBitmapPacketTotalsAllSetBits() {
-		NiimbotImageEncoder.PixelCountResult result =
-				NiimbotImageEncoder.countPixelsForBitmapPacket(new byte[] {(byte) 0xff, (byte) 0xff}, 144, "total");
+		NiimbotImageEncoder.PixelCountResult result = NiimbotImageEncoder
+				.countPixelsForBitmapPacket(new byte[] { (byte) 0xff, (byte) 0xff }, 144, "total");
 		assertEquals(16, result.total);
 	}
 }

@@ -7,10 +7,12 @@ import java.util.List;
 import cz.bliksoft.ptlabelprint.image.PixelSource;
 
 /**
- * Encodes a {@link PixelSource} into per-row packet data. Ported from niimbluelib's
- * {@code ImageEncoder} (src/image_encoder.ts) - the {@code printDirection}-aware rotation in
- * niimbluelib's own {@code CanvasImageSource} is applied by the caller before encoding (see
- * {@code printer.NiimbotLabelPrinter#print}, {@code image.ImageRotation}), not by this class.
+ * Encodes a {@link PixelSource} into per-row packet data. Ported from
+ * niimbluelib's {@code ImageEncoder} (src/image_encoder.ts) - the
+ * {@code printDirection}-aware rotation in niimbluelib's own
+ * {@code CanvasImageSource} is applied by the caller before encoding (see
+ * {@code printer.NiimbotLabelPrinter#print}, {@code image.ImageRotation}), not
+ * by this class.
  */
 public final class NiimbotImageEncoder {
 
@@ -77,11 +79,16 @@ public final class NiimbotImageEncoder {
 					rowsData.add(newRow);
 				}
 
-				// Ported from niimbluelib: a CHECK marker row every 200 rows. Whether it becomes a
-				// packet is the packet generator's business (it doesn't here), but the marker is
-				// NOT optional - it's what ends a run of identical rows, keeping every repeat count
-				// <= 200 and so inside the single byte it's sent in. Leaving it out (as this port
-				// originally did) let a 270-row run go out as repeat=14, which printed just the top
+				// Ported from niimbluelib: a CHECK marker row every 200 rows. Whether it
+				// becomes a
+				// packet is the packet generator's business (it doesn't here), but the marker
+				// is
+				// NOT optional - it's what ends a run of identical rows, keeping every repeat
+				// count
+				// <= 200 and so inside the single byte it's sent in. Leaving it out (as this
+				// port
+				// originally did) let a 270-row run go out as repeat=14, which printed just the
+				// top
 				// of the label on a real M2_H.
 				if (row % CHECK_ROW_INTERVAL == CHECK_ROW_INTERVAL - 1) {
 					rowsData.add(new ImageRow(ImageRow.DataType.CHECK, row, 0, 0, 0, null, null));
@@ -93,7 +100,8 @@ public final class NiimbotImageEncoder {
 	}
 
 	/**
-	 * @param data pixels encoded by {@link #encode} (one byte = 8 pixels, MSB first)
+	 * @param data pixels encoded by {@link #encode} (one byte = 8 pixels, MSB
+	 *             first)
 	 * @return indexes of set (black) pixels, each as a big-endian 16-bit index
 	 */
 	public static byte[] indexPixels(byte[] data) {
@@ -128,14 +136,16 @@ public final class NiimbotImageEncoder {
 	}
 
 	/**
-	 * Counts set ("black") bits in {@code buf}, either as one total (big-endian 16-bit split across
-	 * {@code parts[1]}/{@code parts[2]}) or per one-third-of-the-printhead chunk (used by
-	 * {@link PacketGenerator#printBitmapRow}) - see niimbluelib's own {@code countPixelsForBitmapPacket}
-	 * doc comment for the full split-vs-total rules ported here.
+	 * Counts set ("black") bits in {@code buf}, either as one total (big-endian
+	 * 16-bit split across {@code parts[1]}/{@code parts[2]}) or per
+	 * one-third-of-the-printhead chunk (used by
+	 * {@link PacketGenerator#printBitmapRow}) - see niimbluelib's own
+	 * {@code countPixelsForBitmapPacket} doc comment for the full split-vs-total
+	 * rules ported here.
 	 */
 	public static PixelCountResult countPixelsForBitmapPacket(byte[] buf, int printheadPixels, String mode) {
 		int total = 0;
-		int[] parts = {0, 0, 0};
+		int[] parts = { 0, 0, 0 };
 		int chunkSize = printheadPixels / 8 / 3;
 		boolean split = buf.length <= chunkSize * 3;
 
@@ -164,6 +174,6 @@ public final class NiimbotImageEncoder {
 			return new PixelCountResult(total, parts);
 		}
 
-		return new PixelCountResult(total, new int[] {0, total & 0xff, (total >> 8) & 0xff});
+		return new PixelCountResult(total, new int[] { 0, total & 0xff, (total >> 8) & 0xff });
 	}
 }

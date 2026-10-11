@@ -1,6 +1,9 @@
 package cz.bliksoft.ptlabelprint.protocol.niimbot;
 
-/** Available fields depend on model - most are {@code null} when a given heartbeat variant doesn't report them. */
+/**
+ * Available fields depend on model - most are {@code null} when a given
+ * heartbeat variant doesn't report them.
+ */
 public class HeartbeatData {
 
 	private Boolean paperInserted;
