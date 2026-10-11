@@ -1,6 +1,8 @@
 package cz.bliksoft.ptlabelprint.protocol;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -42,6 +44,9 @@ public class BleTransport implements Transport {
 
 	/** Niimbot's own advertised GATT service UUID - narrows discovery for genuine Niimbot units. Not useful for other protocol families (see class javadoc). */
 	public static final String SERVICE_UUID = "e7810a71-73ae-499d-8c15-faa9aef0c3f2";
+
+	/** The Phomemo split-channel service (write {@code ff02}, notify {@code ff03} - see class javadoc). */
+	public static final String PHOMEMO_SERVICE_UUID = "0000ff00-0000-1000-8000-00805f9b34fb";
 
 	private final BlePeripheral peripheral;
 	private String channelServiceUuid;
@@ -93,9 +98,11 @@ public class BleTransport implements Transport {
 	 * First pass: a genuine Niimbot-style single characteristic with both NOTIFY and
 	 * WRITE_WITHOUT_RESPONSE. Second pass (only if the first finds nothing): the first
 	 * NOTIFY-capable and first WRITE(_WITHOUT_RESPONSE)-capable characteristics within one
-	 * service, for split-channel devices like the Phomemo Q30 (see class javadoc).
+	 * service, for split-channel devices like the Phomemo Q30 (see class javadoc). Both passes see
+	 * the known protocol services first ({@link #preferKnownChannelServices}).
 	 */
-	private void findChannel(List<BleService> services) {
+	private void findChannel(List<BleService> discovered) {
+		List<BleService> services = preferKnownChannelServices(discovered);
 		for (BleService service : services) {
 			for (BleCharacteristic c : service.getCharacteristics()) {
 				if (c.getProperties().contains("NOTIFY") && c.getProperties().contains("WRITE_WITHOUT_RESPONSE")) {
@@ -128,6 +135,28 @@ public class BleTransport implements Transport {
 				return;
 			}
 		}
+	}
+
+	/**
+	 * Moves the known protocol services ({@link #SERVICE_UUID}, then {@link #PHOMEMO_SERVICE_UUID})
+	 * to the front, keeping the rest in discovery order. Discovery order is platform-specific - BlueZ
+	 * reports services by handle - and confirmed on real hardware (Niimbot M2 over BlueZ): its
+	 * unrelated vendor service {@code 0000ff10-...} has a NOTIFY+WRITE_WITHOUT_RESPONSE
+	 * characteristic {@code ff11} listed before Niimbot's own service, so taking the first match
+	 * wrote to {@code ff11} and the printer never answered.
+	 */
+	static List<BleService> preferKnownChannelServices(List<BleService> services) {
+		List<BleService> ordered = new ArrayList<>(services);
+		ordered.sort(Comparator.comparingInt(s -> knownServiceRank(s.getUuid())));
+		return ordered;
+	}
+
+	private static int knownServiceRank(String serviceUuid) {
+		if (SERVICE_UUID.equalsIgnoreCase(serviceUuid))
+			return 0;
+		if (PHOMEMO_SERVICE_UUID.equalsIgnoreCase(serviceUuid))
+			return 1;
+		return 2;
 	}
 
 	@Override
