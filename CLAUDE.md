@@ -1051,3 +1051,11 @@ Forgejo's own package registry via `.forgejo/workflows/maven-snapshot-deploy.yml
 for Forgejo's periodic mirror interval). `.forgejo/workflows/` files are the source of truth on
 GitHub (Forgejo pull-mirrors this repo); a commit made only on the Forgejo side would be silently
 discarded on the next sync.
+
+**N1 ignores the copy quantity (2026-11-16)**: a page sent with `SetPageSize` quantity 2 came out
+once, the status stayed at page 1 (100/100) and the wait for page 2 timed out (direct BLE and
+through the ESP32 bridge alike). `N1PrintTask` (the `B1` flow) therefore sends every copy as a page
+of its own with quantity 1, waiting for the previous page first - confirmed: status reaches page 2.
+Also: `printBatch` restores the job's copies after a failure too, a failed Niimbot print still
+sends `PrintEnd`, `NiimbotDevice.ping(timeoutMs)` tells whether a kept-open connection still
+answers, and `BleTransport.disconnect()` always sends the disconnect.

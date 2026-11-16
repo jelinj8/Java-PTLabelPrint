@@ -80,21 +80,26 @@ public interface LabelPrinter extends AutoCloseable {
 	 * re-encoding/re-transmission, especially costly over a slow transport like
 	 * Bluetooth. {@code job}'s own copies count is used as a per-image multiplier
 	 * (normally 1) rather than assumed, and is restored to that original value
-	 * before this method returns.
+	 * before this method returns, also when a {@link #print} call throws.
 	 */
 	default void printBatch(List<BufferedImage> images, PrintJob job) throws IOException, TimeoutException {
 		int baseCopies = job.getCopies();
-		int i = 0;
-		while (i < images.size()) {
-			BufferedImage current = images.get(i);
-			int runLength = 1;
-			while (i + runLength < images.size() && images.get(i + runLength) == current)
-				runLength++;
-			job.setCopies(baseCopies * runLength);
-			print(current, job);
-			i += runLength;
+		try {
+			int i = 0;
+			while (i < images.size()) {
+				BufferedImage current = images.get(i);
+				int runLength = 1;
+				while (i + runLength < images.size() && images.get(i + runLength) == current)
+					runLength++;
+				job.setCopies(baseCopies * runLength);
+				print(current, job);
+				i += runLength;
+			}
+		} finally {
+			// also after a failure: a caller printing the same job again must not get
+			// the copies multiplied once more
+			job.setCopies(baseCopies);
 		}
-		job.setCopies(baseCopies);
 	}
 
 	/**

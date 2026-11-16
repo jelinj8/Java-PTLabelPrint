@@ -126,8 +126,19 @@ public class NiimbotLabelPrinter extends AbstractLabelPrinter {
 		EncodedImage encoded = NiimbotImageEncoder.encode(rotated, PageColorType.SINGLE_COLOR);
 
 		task.printInit();
-		task.printPage(encoded, job.getCopies());
-		task.waitForFinished();
+		try {
+			task.printPage(encoded, job.getCopies());
+			task.waitForFinished();
+		} catch (IOException | TimeoutException | RuntimeException e) {
+			// don't leave the printer inside a print job - the next one would start in
+			// the middle of this one
+			try {
+				task.printEnd();
+			} catch (IOException | TimeoutException | RuntimeException ignored) {
+				// the original failure is the one to report
+			}
+			throw e;
+		}
 		task.printEnd();
 	}
 

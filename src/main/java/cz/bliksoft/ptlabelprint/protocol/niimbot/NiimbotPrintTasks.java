@@ -76,7 +76,10 @@ public final class NiimbotPrintTasks {
 
 		// B1 (B1PrintTask)
 		registerBareModel(B1PrintTask::new, PrinterModel.D110_M, PrinterModel.B1, PrinterModel.B21_C2B,
-				PrinterModel.M2_H, PrinterModel.N1, PrinterModel.D101);
+				PrinterModel.M2_H, PrinterModel.D101);
+
+		// N1 (N1PrintTask) - the B1 flow, but every copy as a page of its own
+		registerBareModel(N1PrintTask::new, PrinterModel.N1);
 
 		// D110M_V4 (D110V4PrintTask) - plus a versioned override for D110_M at protocol
 		// v4

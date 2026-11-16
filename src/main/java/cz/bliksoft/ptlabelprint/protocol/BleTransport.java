@@ -180,12 +180,17 @@ public class BleTransport implements Transport {
 
 	@Override
 	public void disconnect() throws IOException {
+		// The peripheral object is shared by every transport for its address, and its
+		// own flag can have been cleared by a late "disconnected" event of an earlier
+		// link while this one is up - so the disconnect is sent whatever it says, and
+		// only an error on a link it reports as up is passed on.
+		boolean reportedConnected = peripheral.isConnected();
+		peripheral.setDisconnectListener(null);
 		try {
-			if (peripheral.isConnected()) {
-				peripheral.disconnect();
-			}
+			peripheral.disconnect();
 		} catch (BleException e) {
-			throw new IOException("BLE disconnect failed: " + e.getMessage(), e);
+			if (reportedConnected)
+				throw new IOException("BLE disconnect failed: " + e.getMessage(), e);
 		} finally {
 			connected = false;
 		}

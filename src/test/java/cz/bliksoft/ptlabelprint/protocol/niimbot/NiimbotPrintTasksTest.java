@@ -28,6 +28,14 @@ class NiimbotPrintTasksTest {
 	}
 
 	@Test
+	void n1ResolvesToN1PrintTask() {
+		// the N1 ignores SetPageSize's quantity - every copy goes as its own page
+		Optional<TaskFactory> factory = NiimbotPrintTasks.findPrintTask(PrinterModel.N1, 1);
+		assertTrue(factory.isPresent());
+		assertTrue(factory.get().create(null, new PrintOptions()) instanceof N1PrintTask);
+	}
+
+	@Test
 	void versionedOverrideBeatsBareModelMatch() {
 		// D110_M is bare-mapped to B1PrintTask, but protocol v4 specifically overrides
 		// to D110V4PrintTask.

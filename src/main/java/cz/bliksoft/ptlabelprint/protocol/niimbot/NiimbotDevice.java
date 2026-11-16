@@ -41,7 +41,7 @@ public class NiimbotDevice {
 	private final BlockingQueue<NiimbotPacket> resultQueue = new ArrayBlockingQueue<>(1);
 
 	private volatile List<ResponseCommandId> awaitedIds;
-	private byte[] packetBuf = new byte[0];
+	private volatile byte[] packetBuf = new byte[0];
 	private long packetTimeoutMs = DEFAULT_PACKET_TIMEOUT_MS;
 	/**
 	 * How long unchanged progress values on the last page are taken to mean "this
@@ -90,6 +90,7 @@ public class NiimbotDevice {
 	 * before the exception propagates.
 	 */
 	public PrinterInfo connect() throws IOException, TimeoutException {
+		packetBuf = new byte[0];
 		transport.setRawDataListener(this::onRawData);
 		transport.connect();
 
@@ -281,6 +282,28 @@ public class NiimbotDevice {
 			info.setBatteryPercents(data.getBatteryPercents());
 		}
 		return data;
+	}
+
+	/**
+	 * Whether the printer still answers - for a caller keeping the connection open
+	 * between jobs, before it trusts {@link #isConnected()} with the next one. Any
+	 * answer to a heartbeat counts, also "not supported" or a print error;
+	 * {@code false} is no answer within {@code timeoutMs} (give a remote bridge's
+	 * round trip room - {@link #heartbeat()}'s own 500 ms are meant for a local
+	 * link).
+	 *
+	 * @throws IOException the transport itself failed
+	 */
+	public boolean ping(long timeoutMs) throws IOException {
+		HeartbeatType type = info.getProtocolVersion() >= 3 ? HeartbeatType.ADVANCED_2 : HeartbeatType.ADVANCED_1;
+		try {
+			sendPacketWaitResponse(PacketGenerator.heartbeat(type), timeoutMs);
+			return true;
+		} catch (NiimbotPrintException e) {
+			return true;
+		} catch (TimeoutException e) {
+			return false;
+		}
 	}
 
 	public int getBatteryChargeLevel() throws IOException, TimeoutException {
@@ -771,6 +794,8 @@ public class NiimbotDevice {
 			}
 
 			if (response == null) {
+				// a truncated frame left in the buffer would swallow every later response
+				packetBuf = new byte[0];
 				throw new TimeoutException("Timeout waiting response for " + packet.getValidResponseIds());
 			}
 
