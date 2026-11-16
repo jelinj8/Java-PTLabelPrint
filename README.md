@@ -28,6 +28,9 @@ OS-level pairing needed for either.
 - Printing: the D11_H prints through `D110V4PrintTask`, the M2 through `B1PrintTask`. The D11_H's
   mandatory 90° rotation (its printhead runs along the label) is confirmed correct in direction with
   an asymmetric test pattern, not just a solid block.
+- The **N1** (protocol v1) is confirmed as well, with one deviation from niimbluelib: it ignores a
+  page's copy quantity (asked for 2 copies it printed one and never reported page 2), so
+  `N1PrintTask` sends every copy as a page of its own and waits for the previous one first.
 
 The full niimbluelib catalog is ported - metadata for all 77 models and all 7 print tasks,
 dispatched by model and protocol version (`NiimbotPrintTasks`). Only the two print tasks above are
